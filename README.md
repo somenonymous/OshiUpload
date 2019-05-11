@@ -10,6 +10,8 @@ OshiUpload is a powerful anonymous public file sharing FLOSS, its advantages are
 * Easy template along with a _very stylish no-JavaScript_ version included
 * Duplicate files detection using SHA* sums
 
+This is a synced source code we are currently running at [oshi.at](https://oshi.at)
+
 The interface design is influenced by mixtape.moe and transfer.sh
 
 Our admin interface only provides general stats, abuse reports and a file finder by URL. Unlike all popular file sharing platforms, it doesn't provide a possibility of live tracking/viewing uploaded files in order to avoid attracting unnecessary enthusiasm (self-restriction is good). 
