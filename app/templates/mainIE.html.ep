@@ -1,0 +1,59 @@
+% layout 'main', title => 'Oshi - Temporary file storage';
+
+<div class="domainsinfo text-secondary">
+<div>Clearnet CDN: <a href="<%= $MAIN_DOMAIN_PROTO %>://<%= $MAIN_DOMAIN %>" class="text-secondary"><%= $MAIN_DOMAIN %></a></div>
+<div>Clearnet direct: <a href="<%= $DIRECT_DOMAIN_PROTO %>://<%= $DIRECT_DOMAIN %>" class="text-secondary"><%= $DIRECT_DOMAIN %></a></div>
+<div>Tor: <a href="<%= $ONION_DOMAIN_PROTO %>://<%= $ONION_DOMAIN %> " class="text-secondary"><%= $ONION_DOMAIN %></a></div>
+</div>
+
+<div class="h-100 d-flex align-items-center ">
+<div class="text-center align-self-center mx-auto">
+<div class="row align-items-center h-100">
+	<div class="col">
+		<strong>We hope Internet Explorer is just your spoofed agent, but we feel sorry if you really use it.</strong><br> Install the latest <a href="https://www.torproject.org/download/">Firefox</a> or <a href="https://wiki.debian.org/Chromium">Chromium</a>
+
+		<form action="/" method="post" enctype="multipart/form-data">
+		 <input type="hidden" name="nojs" value="1"><input type="file" name="f" multiple>
+
+		  <div class="form-row align-items-center">
+		    <div class="col-auto" style="width:100px;padding-left:45%">
+				<select name="expire" class="form-control form-control-sm" >
+				  <option value="60">1 Hour</option>
+				  <option value="1440" selected>1 Day</option>
+				  <option value="4320">3 Days</option>
+				  <option value="10080">7 Days</option>
+				  <option value="43200">30 Days</option>
+				  <option value="129600">90 Days</option>
+				</select>
+		    </div>
+		    <div class="col-auto">
+				<div class="custom-control custom-checkbox">
+				  Destroy after DL <input type="checkbox" name="autodestroy" class="custom-control-input" >
+				 
+				</div>
+		    </div>
+		    <div class="col-auto">
+				<div class="custom-control custom-checkbox">
+				  Randomize name <input type="checkbox" name="randomizefn" class="custom-control-input" checked>
+				</div>
+		    </div>
+		    <div class="col-auto">
+				<div class="custom-control custom-checkbox">
+				  Short URL <input type="checkbox" name="shorturl" class="custom-control-input" checked>
+				 
+				</div>
+		    </div>
+		    <div class="col-auto">
+		     <button type="submit" class="btn btn-primary">Upload</button>
+		    </div>
+		  </div>
+
+	
+		
+		</form>
+	</div>
+</div></div>
+
+
+
+</div>

@@ -1,0 +1,148 @@
+# Expiry minimum time in minutes
+UPLOAD_TIME_MIN = 0
+
+# Expiry maximum time in minutes, setting to 0 will allow lifetime uploads
+UPLOAD_TIME_MAX = 129600
+
+# Expiry default time in minutes (must be within the range of 2 above options)
+UPLOAD_TIME_DEFAULT = 1440
+
+# Uploads storage physical path
+UPLOAD_STORAGE_PATH = /mnt/disk1/uploads/
+
+# Uploads manage URL path
+UPLOAD_MANAGE_ROUTE = /a/
+
+# When a duplicate sha sum match already existing file, create a link instead of creating file.
+# If the original file is about to be deleted and there are links, turn one of the links into file.
+UPLOAD_TRACK_DUPLICATES = 1
+# Can be one of 1, 224, 256, 384, 512 (each value refers to the SHA* type)
+# Note that if you change this during production, you will need to recreate your database
+UPLOAD_TRACK_DUPLICATES_HASHTYPE = 1
+
+
+# clearnet domain via CDN
+UPLOAD_DOMAIN_CLEARNET_CDN = oshi.at
+UPLOAD_DOMAIN_CLEARNET_CDN_PROTO = https
+
+# clearnet domain pointing to direct IP
+UPLOAD_DOMAIN_CLEARNET = oshi.at
+UPLOAD_DOMAIN_CLEARNET_PROTO = https
+
+# onion domain
+UPLOAD_DOMAIN_ONION = oshiatwowvdbshka.onion
+UPLOAD_DOMAIN_ONION_PROTO = http
+
+# domain for TCP uploads
+UPLOAD_DOMAIN_TCP = oshi.at
+
+# main domain used for admin url and other stuff, can be UPLOAD_DOMAIN_CLEARNET, UPLOAD_DOMAIN_CLEARNET_CDN or UPLOAD_DOMAIN_ONION
+UPLOAD_DOMAIN_MAIN = UPLOAD_DOMAIN_CLEARNET_CDN
+
+# Use current server's HTTP_HOST param instead of domains defined in config for giving dl links
+UPLOAD_LINK_USE_HOST = 1
+
+# max filename length in bytes (because 1 utf-8 char is >1 bytes)
+UPLOAD_FILENAME_MAX_LENGTH = 255
+
+# captcha token validity time in seconds
+CAPTCHA_TOKEN_EXPIRE_TIME = 300
+
+# require captcha for abuse reports
+CAPTCHA_SHOW_FOR_ABUSE = 0
+
+# Show content instead of push download when the size it less than this value in bytes
+CONTENT_VIEW_UNTIL_SIZE = 2000000
+
+# Increment to CONTENT_VIEW_UNTIL_SIZE if contens is video/audio (webm and stuff)
+CONTENT_VIEW_VIDEO_AUDIO_UNTIL_SIZE = 25000000
+
+#########################################################################
+
+# Engine admin URL path
+ADMIN_ROUTE = /SuPeRsEcReTuRl/
+
+# Engine admin Basic Auth username and password hashed in SHA256 ("hunter2" in config.example )
+ADMIN_BASICAUTH_USER = admin
+ADMIN_BASICAUTH_PASSWORDHASH = f52fbd32b2b3b86ff88ef6c490628285f482af15ddcb29541f94bcf526a3f6c7
+
+# Engine admin HOST header restriction. It is safer to have separate domain 
+# for the admin panel (specially when you hide the IP behind Cloudflare, because 
+# we don't trust our private data to CDN's)
+# Uncomment to enable
+#ADMIN_HOST = oshiatwowvdbshka.onion
+
+# Database information
+# DB_TYPE must be "sqlite" or "mysql"
+# DB_NAME can be a filename or full path in case DB_TYPE is sqlite
+DB_TYPE = mysql
+DB_HOST = localhost
+#DB_PORT = 3306
+DB_NAME = uploads
+DB_USER = user1
+DB_PASS = dummypass
+
+# General functions debug
+DEBUG = 0
+
+#########################################################################
+
+
+# HTTP upload max file size in megabytes
+HTTP_UPLOAD_FILE_MAX_SIZE = 1000
+
+
+# HTTP main app & POST uploads listen address and port, * for listening on all interfaces
+HTTP_APP_ADDRESS = *
+HTTP_APP_PORT = 4019
+
+
+# HTTP PUT uploads listen address and port
+HTTP_PUT_ADDRESS = ::
+HTTP_PUT_PORT = 4020
+
+# HTTP PUT uploads timeout for new connection without data
+HTTP_PUT_INACTIVE_TIMEOUT_CONNECTION = 4
+
+# HTTP PUT timeout for connection with data 
+HTTP_PUT_INACTIVE_TIMEOUT_UPLOAD = 30
+
+# HTTP PUT server verbosity level from 0 to 2
+HTTP_PUT_DEBUG = 0
+
+#########################################################################
+
+# TCP upload max file size in megabytes
+TCP_UPLOAD_FILE_MAX_SIZE = 150
+
+# TCP upload max RAM buffers size in megabytes
+TCP_UPLOAD_MEMORY_MAX_SIZE = 2000
+
+# TCP raw binary mode listen address and port
+TCP_RAW_ADDRESS = ::
+TCP_RAW_PORT = 7777
+
+# TCP base64 mode listen address and port
+TCP_BASE64_ADDRESS = ::
+TCP_BASE64_PORT = 7778
+
+# TCP hex mode listen address and port
+TCP_HEX_ADDRESS = ::
+TCP_HEX_PORT = 7779
+
+# TCP uploads timeout for new connection without data
+TCP_INACTIVE_TIMEOUT_CONNECTION = 4
+
+# TCP uploads timeout for connection with data 
+TCP_INACTIVE_TIMEOUT_UPLOAD = 30
+
+# TCP server verbosity level from 0 to 2
+TCP_DEBUG = 0
+
+
+#########################################################################
+
+# Scan uploaded application/x-dosexec and application/x-executable with clamav
+# Infected files will be toggled to autodestroy=on and have that toggle locked for a user
+# apt-get install clamav-daemon clamav-freshclam # to install clamav on Ubuntu/Debian
+CLAMAV_SCANS_ENABLED = 0

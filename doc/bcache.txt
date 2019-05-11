@@ -1,0 +1,16 @@
+The best performance experience may be achieved by using an ssd for caching and a hdd for storage in a bcache layer.
+
+Quick setup:
+ /dev/sdb = your storage big HDD
+ /dev/sda3 = your partition for cache on SSD
+
+sudo dd if=/dev/zero if=/dev/sdb bs=512 count=8
+sudo dd if=/dev/zero if=/dev/sda3 bs=512 count=8
+wipefs -a /dev/sdb
+wipefs -a /dev/sda3
+
+make-bcache -C /dev/sda3 -B /dev/sdb --discard --writeback
+
+Now do `lsblk` and verify your devices are correctly added, also check `dmesg` for possible errors.
+
+Your block device ready to be used as a file storage FS will be on /dev/bcache0

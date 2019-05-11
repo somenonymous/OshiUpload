@@ -1,0 +1,4 @@
+% layout 'main', title => 'O shi-, 404';
+
+<div class="notfoundbg"></div>
+<h3 class="text-center">File not found</h3>

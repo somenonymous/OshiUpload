@@ -1,0 +1,71 @@
+% layout 'main', title => 'Command-line uploads';
+<div class="container">
+<h2> curl, netcat, telnet. </h2>
+
+
+<p>You can easily upload your files to our service using a Unix/Linux command-line interface. <br>We allow HTTP PUT for <i>curl -T</i> and some TCP ports for uploads using netcat/telnet.</p>
+<p>All the ports described below are available via our Tor hidden service as well - <a href="http://<%= $ONION_DOMAIN %>"><%= $ONION_DOMAIN %></a></p>
+<h4>Using curl (PUT method)</h4>
+
+<div><code>curl -T /path/to/file <%= $DIRECT_DOMAIN_PROTO %>://<%= $DIRECT_DOMAIN %> </code></div>
+<div><code>curl -T /path/to/file <%= $DIRECT_DOMAIN_PROTO %>://<%= $DIRECT_DOMAIN %>/customfilename </code># use a different filename</div>
+<div><code>curl -T /path/to/file <%= $DIRECT_DOMAIN_PROTO %>://<%= $DIRECT_DOMAIN %>/customfilename/15</code> # use a different filename and expire in 15 minutes</div>
+<div><code>curl --upload-file /path/to/file <%= $DIRECT_DOMAIN_PROTO %>://<%= $DIRECT_DOMAIN %>/customfilename/60 </code># expire in 60 minutes </div>
+<div><code>curl -T /path/to/file <%= $DIRECT_DOMAIN_PROTO %>://<%= $DIRECT_DOMAIN %>/customfilename/-1 </code># auto-destroy after first download </div>
+<div><code>curl -T /path/to/file http://<%= $ONION_DOMAIN %></code> # upload using our Tor hidden service</div>
+
+<h4 class="mt-3">Using curl (POST method)</h4>
+<div><code>curl <%= $MAIN_DOMAIN_PROTO %>://<%= $MAIN_DOMAIN %> -F f=@/path/to/file </code></div>
+<div><code>curl <%= $MAIN_DOMAIN_PROTO %>://<%= $MAIN_DOMAIN %> -F f=@/path/to/file -F expire=5</code> # expire in 5 minutes</div>
+<div><code>curl <%= $MAIN_DOMAIN_PROTO %>://<%= $MAIN_DOMAIN %> -F f=@/path/to/file -F expire=120 -F autodestroy=1</code> # autodestroy on download or expire in 120 minutes</div>
+<div><code>curl <%= $MAIN_DOMAIN_PROTO %>://<%= $MAIN_DOMAIN %> -F f=@/path/to/file -F shorturl=0</code> # force a long URL in order to prevent possible short URL bruteforce</div>
+<div><code>curl <%= $MAIN_DOMAIN_PROTO %>://<%= $MAIN_DOMAIN %> -F f=@/path/to/file -F randomizefn=1</code> # randomize filename</div>
+
+<h4 class="mt-3">Using TCP (netcat/telnet)</h4>
+<p>Are you an advanced IT person and need to upload your files using raw TCP session? It's possible right here. This service is inspired by <a target="_blank" href="http://tcp.st">tcp.st</a></p>
+<p>Our TCP ports:</p>
+<ul>
+<li><strong><%= $TCP_PORT_RAW %></strong> - raw TCP port</li>
+<li><strong><%= $TCP_PORT_BASE64 %></strong> - Base64 TCP port. You give us Base64 data and we decode it.</li>
+<li><strong><%= $TCP_PORT_HEX %></strong> - Hex TCP port. You give us Hex data and we decode it.</li>
+</ul>
+<p>As a response we return 3 URLs: Management URL, Clearnet download URL and Onion download URL</p>
+<p>The maximum size for TCP uploads is currently limited to <strong><%= $MAX_FILE_SIZE_TCP %> MB</strong></p>
+
+<h5>Netcat example</h5>
+<div><code>nc -q2 <%= $TCP_DOMAIN %> <%= $TCP_PORT_RAW %> < /path/to/file </code></div>
+
+<h5 class="mt-3">Telnet examples</h5>
+<p>Now let's imagine you've got an <del>illegal</del> access to a MIPS router running OpenWRT and found some rogue malware binary that you would like to analyze or send to VirusTotal.
+There is no netcat or curl, but only telnet and there is no easy way to download the file. Here comes dat boi!<br>
+Sending raw binary files via telnet is impractical, you better encode them in Base64 or Hex, that's why we have these ports </p>
+<p>Our <strong><%= $TCP_PORT_BASE64 %></strong> port is a TCP server decoding everything from Base64, so you just need to encode your file. <br> 
+Below examples demonstrate how to upload a file using different tools for encoding</p>
+
+<div><code>( sleep 1 && base64 /path/to/file ) | telnet <%= $TCP_DOMAIN %> <%= $TCP_PORT_BASE64 %> </code></div>
+
+<div><code>( sleep 1 && perl -MMIME::Base64 -0777 -ne 'print encode_base64($_)' /path/to/file ) | telnet <%= $TCP_DOMAIN %> <%= $TCP_PORT_BASE64 %> </code></div>
+
+
+<p class="mt-3">Our <strong><%= $TCP_PORT_HEX %></strong> port is a TCP server decoding everything from Hex, so you just need to encode it. Here is how to upload using different tools for encoding in Hex</p>
+
+<div>&mdash; fast (using <i>xxd</i>)</div>
+<div><code>( sleep 1 && xxd -p /path/to/file | tr -d '\n' ) | telnet <%= $TCP_DOMAIN %> <%= $TCP_PORT_HEX %> </code></div>
+
+<div>&mdash; fast (using <i>perl</i>)</div>
+<div><code>( sleep 1 && perl -ne 'print unpack "H*", $_' /path/to/file ) | telnet <%= $TCP_DOMAIN %> <%= $TCP_PORT_HEX %> </code></div>
+
+<div>&mdash; slow (using <i>hexdump</i>)</div>
+<div><code>( sleep 1 && hexdump -ve '1/1 "%.2x"' /path/to/file ) | telnet <%= $TCP_DOMAIN %> <%= $TCP_PORT_HEX %> </code></div>
+
+<div>&mdash; slow (using <i>od</i>)</div>
+<div><code>( sleep 1 && od -v -t x1 -An /path/to/file | tr -d '\n ' ) | telnet <%= $TCP_DOMAIN %> <%= $TCP_PORT_HEX %> </code></div>
+
+
+
+<p class="mt-3">We use sleep for telnet because unlike netcat, it has no -q option to receive data from server after sending eof<br>
+thus it might close the connection immediately after sending the data without receiving a response from us.<br>
+However, sleep may not be needed when sending big files.<br>
+</p>
+
+</div>

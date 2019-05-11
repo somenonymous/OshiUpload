@@ -1,0 +1,60 @@
+% layout 'main', title => 'Upload management';
+<div class="container">
+<h3> Upload management - <span class="text-secondary"><%= $file->{rpath} %></span></h3>
+
+<div class="text-center" style="background-color:#f9f9fa">
+<div class="row"><div class="col text-right text-secondary">Clearnet DL</div>
+	<div class="col text-left"><a target="_blank" href="<%= $MAIN_DOMAIN_PROTO %>://<%= $MAIN_DOMAIN . '/' . $file->{urlpath} . ( $file->{shorturl} == 0 ? '/'.$file->{rpath} : '' ) %>">
+		<%= $MAIN_DOMAIN . '/' . $file->{urlpath} . ( $file->{shorturl} == 0 ? '/'.$file->{rpath} : '' ) %>
+	</a></div>
+</div>
+<div class="row"><div class="col text-right text-secondary">Tor DL</div>
+	<div class="col text-left"><a target="_blank" href="<%= $ONION_DOMAIN_PROTO %>://<%= $ONION_DOMAIN . '/' . $file->{urlpath}  . ( $file->{shorturl} == 0 ? '/'.$file->{rpath} : '' ) %>">
+		<%= $ONION_DOMAIN . '/' . $file->{urlpath} . ( $file->{shorturl} == 0 ? '/'.$file->{rpath} : '' ) %>
+	</a></div>
+</div>
+<div class="row"><div class="col text-right text-secondary">Size</div><div class="col text-left"><%= $file->{size} %></div></div>
+<div class="row"><div class="col text-right text-secondary">Type</div><div class="col text-left"><%= $file->{ftype} %></div></div>
+<div class="row"><div class="col text-right text-secondary">SHA<%= $FILE_HASH_TYPE %> Hashsum</div><div class="col text-left"><%= $file->{hashsum} %></div></div>
+<div class="row"><div class="col text-right text-secondary">Created</div><div class="col text-left"><%= scalar localtime $file->{created} %></div></div>
+<div class="row"><div class="col text-right text-secondary">Expires</div><div class="col text-left"><%= $file->{expires} == 0 ? 'Never' : scalar localtime $file->{expires} %></div></div>
+<div class="row"><div class="col text-right text-secondary">Destroy after DL</div><div class="col text-left"><%= $file->{autodestroy} == 1 ? 'Yes' : 'No' %> <form class="d-inline" method="get"><input type="hidden" name="toggleautodestroy" value="1"><button type="submit" class="btn btn-link">[toggle]</button></form></div></div>
+<div class="row"><div class="col text-right text-secondary">Hits</div><div class="col text-left"><%= $file->{hits} %></div></div>
+</div>
+<p> Use this button to delete the file permanently: </p>
+<form method="get">
+<input type="hidden" name="delete" value="1">
+<button type="submit" class="btn btn-danger">Delete</button>
+</form>
+
+<p class="mt-4"> Alternatively, you can extend the file expiration period: </p>
+<form method="get">
+	  <div class="form-row">
+	    <div class="col-md-2 mb-3">
+			
+			<select name="expire" class="custom-select" id="expsel">
+			  <option value="60">1 Hour</option>
+			  <option value="1440" selected>1 Day</option>
+			  <option value="4320">3 Days</option>
+			  <option value="10080">7 Days</option>
+			  <option value="43200">30 Days</option>
+			  <option value="129600">90 Days</option>
+			</select>
+		
+	    </div>
+	    <div class="col-md-1 mb-3">
+			<img src="/captcha/<%= $captchatoken %>" alt="Captcha text">
+	    </div>
+	    <div class="col-md-1 mb-3">
+			<input type="text" name="captcha" class="form-control" placeholder="Captcha">
+			<input type="hidden" name="captchatoken" value="<%= $captchatoken %>">
+	    </div>
+	    <div class="col-md-1 mb-3">
+
+			 <button type="submit" class="btn btn-primary">Submit</button>
+
+	    </div>
+	  </div>
+</form>
+
+</div>

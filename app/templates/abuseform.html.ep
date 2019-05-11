@@ -1,0 +1,48 @@
+% layout 'main', title => 'Oshi*';
+<div class="container">
+% if (stash 'SUCCESS') {
+	<div class="row justify-content-center text-center">
+		<div class="col-6">
+			<a href="/" class="btn btn-info">Back the main page</a>
+		</div>
+	</div>
+% } else {
+
+	<div class="jumbotron">
+	<h2>Drama section</h2>
+	<p>If you feel like sending an abuse report, please don't try sending abuse emails to the first IP address you see, breaking our front-end server operation will not delete the file and our service will be restored back quickly. Our backend server is well shadowrouted and it is behind <i>seven</i> reverse-proxies.</p>
+	
+	<p>All the data is located in a 3rd world country where perception and definition of terms such as "unlawful" may differ from yours.</p>
+	
+	<p>Please use the form below to get our concern about some stored file, but don't expect much because we generally don't give a fuck what is uploaded over here and we are against any censorship on the Internet. The only subject we will react fast to is child pornography. Do not ask us to provide IP addresses or any other identifying information, we don't store it <i>in order to protect your privacy... you're welcome.</i> Be polite if you wish to comment your request.</p>
+	
+	<p>If you attach digital copies of a subpoena or similar documents that show legal accusations against us based on our server's country legislation (which we do not disclose so you must guess), it may facilitate the resolution of your issue. To attach these, <a target="_blank" href="/">upload</a> your files using our service and link them in the 'Comment' section below.</p>
+	
+	<form method="post" action="/abuse">
+	  <div class="form-group">
+	    <label for="link">Abusive file url (required)</label>
+	    <input type="text" name="url" class="form-control" id="link" placeholder="<%= $MAIN_DOMAIN_PROTO %>://<%= $MAIN_DOMAIN %>/xnSbQpX">
+	  </div>
+	  <div class="form-group">
+	    <label for="email">Email address (optional)</label>
+	    <input type="email" name="email" class="form-control" id="email" placeholder="john@seriousbusiness.com">
+	  </div>
+	  <div class="form-group">
+	    <label for="drama">Comments (not necessary)</label>
+	    <textarea class="form-control" name="comment" id="drama" rows="3"></textarea>
+	  </div>
+% if (my $captchatoken = stash 'captchatoken') {
+	  <div class="form-inline form-group">
+		<div class="col-xs-2">
+			<img src="/captcha/<%= $captchatoken %>" alt="Captcha text">
+			<input type="text" name="captcha" class="form-control" placeholder="Captcha">
+			<input type="hidden" name="captchatoken" value="<%= $captchatoken %>">
+		</div>
+	  </div>
+% }
+	  <button type="submit" class="btn btn-primary mb-2">Report file</button>
+	</form>
+	</div>
+
+% }
+</div>

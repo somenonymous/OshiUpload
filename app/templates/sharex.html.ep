@@ -1,0 +1,31 @@
+% layout 'main', title => 'Oshi.at ShareX file';
+<div class="container">
+
+	<div class="jumbotron">
+		<p>To use our uploader in ShareX, <a target="_blank" href="/static/oshi.at.sxcu">download</a> or create the file <code>oshi.at.sxcu</code> with the following contents:</p>
+		
+		<pre class="text-primary"><code>
+{
+  "DestinationType": "ImageUploader, TextUploader, FileUploader",
+  "RequestMethod": "POST",
+  "RequestURL": "https://oshi.at/",
+  "Parameters": {
+    "randomizefn": "1",
+    "shorturl": "1",
+    "expire": "129600"
+  },
+  "Headers": {
+    "X-Requested-With": "XMLHttpRequest"
+  },
+  "Body": "MultipartFormData",
+  "FileFormName": "f[]",
+  "URL": "$json:files[0].url$"
+}
+
+		
+		</code></pre>
+		
+		<p>Double-click on the file for automatic import or import it into ShareX manually</p>
+	</div>
+
+</div>

@@ -1,0 +1,35 @@
+# We use HAProxy to route PUT requests to http_put.pl and other requests to webapp.pl
+# HAProxy doesn't impact performance and its condition management is robust (unlike nginx...)
+#
+# If you don't plan to use 'curl -T' you may use a standard reverse-proxy configuration 
+# and point all requests to http://127.0.0.1:4019
+#
+
+global
+	# daemon
+	maxconn 2048
+	tune.ssl.default-dh-param 2048
+
+defaults
+	# 30 Seconds
+	timeout connect 300000ms
+	timeout client 300000ms
+	timeout server 30000ms
+
+
+frontend localhost
+    bind *:80
+    bind *:443 ssl crt /path/to/your_ssl_bundle.pem
+    mode http
+    acl is_put method PUT
+    use_backend put_uploader if is_put
+    default_backend default
+
+backend put_uploader
+	mode http
+	server put_backend 127.0.0.1:4020
+
+backend default
+	mode http
+	option httpclose
+	server default_backend 127.0.0.1:4019

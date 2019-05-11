@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+  <meta name="description" content="Secure file sharing. Encrypted server. No logs. TCP and Curl uploads.">
+  <meta name="author" content="Undisclosed">
+
+  <title><%= $title %></title>
+
+  <link href="/static/vendor/bootstrap/css/bootstrap.min.css" rel="stylesheet">
+  <link href="/static/css/main.css" rel="stylesheet">
+  <script async type="text/javascript" src="/minified.js"></script>
+
+</head>
+
+<body>
+
+  <nav class="navbar navbar-expand-sm fixed-bottom navbar-inverse navbar-light bg-transparent">
+    <div class="container">
+      <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarResponsive" aria-controls="navbarResponsive" aria-expanded="false" aria-label="Toggle navigation">
+        <span class="navbar-toggler-icon"></span>
+      </button>
+      <div class="collapse navbar-collapse" id="navbarResponsive">
+        <ul class="navbar-nav ml-auto">
+          <li class="nav-item">
+            <a class="nav-link" href="/">Oshi</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/cmd">Command-line interface</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/sharex">ShareX</a>
+          </li>
+          <li class="nav-item">
+            <a target="_blank" class="nav-link" href="https://github.com/somenonymous/OshiUpload">Github</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/abuse">Abuse</a>
+          </li>
+        </ul>
+      </div>
+    </div>
+  </nav>
+
+
+% if (my $msg = stash 'ERROR') {
+<div class="row justify-content-center text-center">
+	<div class="col-6">
+		<div class="alert alert-danger" role="alert">
+		  <%= $msg %>
+		</div>
+	</div>
+</div>
+% }
+% if (my $msg = stash 'SUCCESS') {
+<div class="row justify-content-center text-center">
+	<div class="col-6">
+		<div class="alert alert-success" role="alert">
+		  <%= $msg %>
+		</div>
+	</div>
+</div>
+% }
+
+	<%= content %>
+
+</body>
+
+</html>

@@ -1,0 +1,85 @@
+% layout 'main', title => 'Oshi - Anonymous file storage';
+
+% if ($BASEURLPROTO ne 'https' and $BASEURL ne $ONION_DOMAIN) {
+<div class="row justify-content-center text-center" style="position:absolute;width:100%">
+	<div class="col-6">
+		<div class="alert alert-danger" role="alert">
+		  <div>Please consider using our site via https - <a href="https://<%= $BASEURL %>"><strong>click to switch</strong></a></div>
+		  <div>We purposely allow http connections due to compatibility reasons</div>
+		</div>
+	</div>
+</div>
+% }
+
+<div class="domainsinfo text-secondary">
+<!--<div>Clearnet CDN: <a href="<%= $MAIN_DOMAIN_PROTO %>://<%= $MAIN_DOMAIN %>" class="text-secondary"><%= $MAIN_DOMAIN %></a></div>-->
+<div>Clearnet direct: <a href="<%= $DIRECT_DOMAIN_PROTO %>://<%= $DIRECT_DOMAIN %>" class="text-secondary"><%= $DIRECT_DOMAIN %></a></div>
+<div>Tor: <a href="<%= $ONION_DOMAIN_PROTO %>://<%= $ONION_DOMAIN %> " class="text-secondary"><%= $ONION_DOMAIN %></a></div>
+</div>
+
+<div class="h-100 d-flex align-items-center ">
+<div class="lolwhat"></div>
+<div class="text-center align-self-center mx-auto">
+<div class="row align-items-center h-100">
+	<div class="col">
+		<form action="/" method="post" enctype="multipart/form-data">
+		 <noscript><input type="hidden" name="nojs" value="1"><input type="file" name="f" multiple></noscript>
+	
+		
+			<div class="jumbosonic layer">
+
+				<span class="small text-secondary">Max. size: <%= $MAX_FILE_SIZE %> MB</span>
+
+				<p id="no-file-api" class="alert alert-error">
+					<strong>Your browser does not support FormData API</strong> Install the latest <a href="https://www.torproject.org/download/">Firefox</a> or <a href="https://wiki.debian.org/Chromium">Chromium</a>
+				</p>
+				
+				<a href="javascript:;" id="upload-btn" class="btn jsonly d-none">Select <span>or drop your </span>file(s)</a>
+				<input type="file" class="jsonly disabled" id="upload-input" name="files[]" multiple="multiple" data-max-size="<%= $MAX_FILE_SIZE %>MiB" disabled>
+				<ul id="upload-filelist"></ul>
+
+			</div>
+			
+		  <div class="form-row align-items-center">
+		    <div class="col-auto">
+				<select name="expire" class="form-control form-control-sm" id="expsel">
+				  <option value="60">1 Hour</option>
+				  <option value="1440" selected>1 Day</option>
+				  <option value="4320">3 Days</option>
+				  <option value="10080">7 Days</option>
+				  <option value="43200">30 Days</option>
+				  <option value="129600">90 Days</option>
+				</select>
+		    </div>
+		    <div class="col-auto">
+				<div class="custom-control custom-checkbox">
+				  <input type="checkbox" name="autodestroy" class="custom-control-input" id="autodestroy">
+				  <label class="custom-control-label" for="autodestroy">Destroy after DL</label>
+				</div>
+		    </div>
+		    <div class="col-auto">
+				<div class="custom-control custom-checkbox">
+				  <input type="checkbox" name="randomizefn" class="custom-control-input" id="randomizefn" checked>
+				  <label class="custom-control-label" for="randomizefn">Randomize name</label>
+				</div>
+		    </div>
+		    <div class="col-auto">
+				<div class="custom-control custom-checkbox">
+				  <input type="checkbox" name="shorturl" class="custom-control-input" id="shorturl" checked>
+				  <label class="custom-control-label" for="shorturl">Short URL</label>
+				</div>
+		    </div>
+		    <div class="col-auto">
+		      <noscript><button type="submit" class="btn btn-primary">Upload</button></noscript>
+		    </div>
+		  </div>
+
+	
+		
+		</form>
+	</div>
+</div></div>
+
+
+
+</div>

@@ -1,0 +1,74 @@
+% layout 'main', title => 'Admin area - abuse reports';
+
+<ul class="nav justify-content-center">
+  <li class="nav-item">
+    <a class="nav-link" href="<%= $ADMIN_ROUTE %>">File/Stats</a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link" href="<%= $ADMIN_ROUTE %>reports">Reports
+% if ($REPORT_COUNT > 0) {
+    <span class="badge badge-danger"><%= $REPORT_COUNT %></span>
+% }
+    </a>
+  </li>
+</ul>
+
+<div class="container mb-5">
+
+
+	  % for my $i (@$REPORTS) {
+	<table class="table table-sm border border-warning mb-4">
+	  <thead>
+	    <tr>
+	      <th scope="col" class="border-top border-warning ">Actions</th>
+	      <th scope="col" class="border-top border-warning ">Time</th>
+	      <th scope="col" class="border-top border-warning ">URL</th>
+	      <th scope="col" class="border-top border-warning ">Email</th>
+	    </tr>
+	  </thead>
+	  <tbody>
+	  <tr>
+	    <td class="d-inline">
+			<form method="get" class="d-inline" style="margin: 0; padding: 0;">
+			<input type="hidden" name="resolved" value="<%= $i->{url} %>">
+			<button type="submit" class="btn btn-warning btn-sm">Resolved</button>
+			</form>
+			<form method="get" class="d-inline" style="margin: 0; padding: 0;">
+			<input type="hidden" name="purgeall" value="<%= $i->{url} %>">
+			<button type="submit" class="btn btn-danger btn-sm">Purge copies</button>
+			</form>
+		</td>
+	    <td><%= scalar localtime $i->{time} %></td>
+	    <td><a target="_blank" href="<%= $ADMIN_ROUTE %>?file=<%== $i->{url} %>"><%== $i->{url} %></a></td>
+	    <td><%== $i->{email} %></td>
+
+	  </tr>
+	  <tr>
+	    <th>Comment</th><td colspan=3><%== $i->{comment} %></td>
+	  </tr>
+	  <tr>
+	   <td colspan="4">
+	   
+		 <table class="table custom-view">
+		  <thead>
+		      <th>Hashsum</th>
+		      <th>Size</th>
+		      <th>Type</th>
+		      <th>Copies</th>
+		  </thead>
+		  <tbody>
+		      <td><%= $i->{info}->{hashsum} %></td>
+		      <td><%= $i->{info}->{size} %></td>
+		      <td><%= $i->{info}->{ftype} %></td>
+		      <td><%= $i->{count} %></td>
+		  </tbody>
+		 </table>
+			   
+	   </td>
+	  </tr>
+	  </tbody>
+	</table>
+	
+	  % }
+
+</div>

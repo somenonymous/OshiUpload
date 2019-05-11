@@ -1,0 +1,30 @@
+% layout 'main', title => 'Upload complete';
+<div class="container">
+      <div class="row justify-content-center overflow-auto">
+        <div class="col">
+
+<div class="row justify-content-center overflow-auto">
+<div class="col-md-12">
+<div class="alert alert-success" role="alert">
+Your files were successfully uploaded.
+</div>
+</div></div>
+
+<% for my $j (@{$FILES}) { %>
+<div class="row"><div class="col">
+<small class="text-success"> <%= $j->{name} %> </small>
+<pre>
+  Download: <a href="<%= $j->{url} %>"><%= $j->{url} %></a>
+  Manage:&nbsp;&nbsp; <a href="<%= $j->{manageurl} %>"><%= $j->{manageurl} %></a>
+</pre>
+</div></div>
+<% } %>
+<div class="row">
+<div class="col">
+<a href="/" class="btn btn-secondary">Start again</a>
+</div></div>
+
+
+        </div>
+      </div>
+</div>
