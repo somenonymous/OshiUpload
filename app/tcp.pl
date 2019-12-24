@@ -7,7 +7,6 @@ use feature 'say';
 use bytes;
 
 use Mojo::IOLoop;
-use AnyEvent::Socket;
 
 use MIME::Base64;
 
@@ -89,35 +88,35 @@ my %uploads; # active upload connections data
 	}
  });
 
-tcp_server $PORTS->{'RAW'}->{address}||undef, $PORTS->{'RAW'}->{port}, sub {
-	my ($fh, $host, $port)  = @_;
+Mojo::IOLoop->server({port => $PORTS->{'RAW'}->{port}, address => $PORTS->{'RAW'}->{address}||'127.0.0.1' } => sub {
+  my ($loop, $stream) = @_;
 
 	my $io;
 	my $proginactivity;
 	my $inactivity;
 
-	tcp_server_process($io, $proginactivity, $inactivity, $fh, 'RAW');
-};
+	tcp_server_process($io, $proginactivity, $inactivity, $stream, 'RAW');
+});
 
-tcp_server $PORTS->{'BASE64'}->{address}||undef, $PORTS->{'BASE64'}->{port}, sub {
-	my ($fh, $host, $port)  = @_;
-
-	my $io;
-	my $proginactivity;
-	my $inactivity;
-
-	tcp_server_process($io, $proginactivity, $inactivity, $fh, 'BASE64');
-};
-
-tcp_server $PORTS->{'HEX'}->{address}||undef, $PORTS->{'HEX'}->{port}, sub {
-	my ($fh, $host, $port)  = @_;
+Mojo::IOLoop->server({port => $PORTS->{'BASE64'}->{port}, address => $PORTS->{'BASE64'}->{address}||'127.0.0.1' } => sub {
+  my ($loop, $stream) = @_;
 
 	my $io;
 	my $proginactivity;
 	my $inactivity;
 
-	tcp_server_process($io, $proginactivity, $inactivity, $fh, 'HEX');
-};
+	tcp_server_process($io, $proginactivity, $inactivity, $stream, 'BASE64');
+});
+
+Mojo::IOLoop->server({port => $PORTS->{'HEX'}->{port}, address => $PORTS->{'HEX'}->{address}||'127.0.0.1' } => sub {
+  my ($loop, $stream) = @_;
+
+	my $io;
+	my $proginactivity;
+	my $inactivity;
+
+	tcp_server_process($io, $proginactivity, $inactivity, $stream, 'HEX');
+});
 
 sub tcp_server_process {
 	my $io = shift;
@@ -131,7 +130,7 @@ sub tcp_server_process {
 	my $onbuffers = 0;
 	$onbuffers += $uploads{$_}->{length} foreach keys %uploads;
 	if ( $onbuffers >= $buffers_max_size_bytes ) {
-		syswrite $fh, "Can't accept your upload due to high load, please try again in a few minutes\n";
+		$fh->write("Can't accept your upload due to high load, please try again in a few minutes\n");
 		return;
 	}
 	
@@ -140,37 +139,37 @@ sub tcp_server_process {
 	my $name = $iorefs{$fh}->{name};
     my $nameadmin = $iorefs{$fh}->{nameadmin};
     my $resp = make_response($name, $nameadmin);
-	syswrite $fh, "$resp\nStarting file transfer" . ($type ne 'RAW' ? " in $type mode" : '') . "\n";
+	$fh->write("$resp\nStarting file transfer" . ($type ne 'RAW' ? " in $type mode" : '') . "\n");
 
 	$inactivity = Mojo::IOLoop->timer($INACTIVE_TIMEOUT_CONNECTION => sub {
 		my $loop = shift;
-		syswrite $fh, "You're inactive, closing connection\n";
+		$fh->write("You're inactive, closing connection\n");
 		
 		$loop->remove($proginactivity);
 		delete $ctimers{$inactivity};
 		delete $uploads{$iorefs{$fh}->{name}} if exists $uploads{$iorefs{$fh}->{name}};
 		delete $iorefs{$fh};
-		undef $io;
+		$fh->close_gracefully; 
 	});
 	$ctimers{$inactivity} = '';
-
-	$io = AnyEvent->io (fh => $fh, poll => 'r', cb => sub {
-		
-		
-		my $input = read ($fh, my $data, 8192);
-		
-		if (!$input) {
+	
+	$fh->on(close => sub {
+	  my $fh = shift;
+				
 			
 			say "$fh closed" if $DEBUG;
 			$uploads{$iorefs{$fh}->{name}}->{finished} = 1 if (exists $iorefs{$fh} and exists $uploads{$iorefs{$fh}->{name}}) ;
-			undef $io;
+			$fh->close_gracefully; 
 			Mojo::IOLoop->remove($inactivity);
 			delete $ctimers{$inactivity};
 			Mojo::IOLoop->remove($proginactivity);
 			delete $iorefs{$fh};
 			
-		} else {
-			
+	});
+	
+  $fh->on(read => sub {
+    my ($fh, $data) = @_;
+
 			do {
 				Mojo::IOLoop->remove($inactivity); 
 				delete $ctimers{$inactivity}
@@ -186,8 +185,8 @@ sub tcp_server_process {
 			$uploads{$iorefs{$fh}->{name}}->{length} += bytes::length($data);
 			
 			if ( $uploads{$iorefs{$fh}->{name}}->{length} > $file_max_size_bytes ) {
-				syswrite $fh, "Your file exceeded ${FILE_MAX_SIZE}MB, aborting upload\n";
-				undef $io;
+				$fh->write("Your file exceeded ${FILE_MAX_SIZE}MB, aborting upload\n");
+					$fh->close_gracefully; 
 				Mojo::IOLoop->remove($inactivity);
 				Mojo::IOLoop->remove($proginactivity);
 				delete $ctimers{$inactivity};
@@ -195,16 +194,15 @@ sub tcp_server_process {
 				delete $iorefs{$fh};
 			}
 			
-		}
-		
-	});
+  });
+
 	$proginactivity = Mojo::IOLoop->recurring(1 => sub {
 			my $loop = shift;
 			return unless exists $iorefs{$fh};
 			if ( $iorefs{$fh}->{lastchunk} && (time - $iorefs{$fh}->{lastchunk}) > $INACTIVE_TIMEOUT_UPLOAD ) {
-				say "$io is inactive" if $DEBUG;
+				say "$fh is inactive" if $DEBUG;
 				$uploads{$iorefs{$fh}->{name}}->{finished} = 1;
-				undef $io;
+					$fh->close_gracefully; 
 				$loop->remove($proginactivity);
 			}
 	});

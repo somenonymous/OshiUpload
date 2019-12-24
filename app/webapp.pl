@@ -9,7 +9,7 @@ require "./functions.pm";
 
 my $main = OshiUpload->new;
 app->config(hypnotoad => { listen => ['http://' . $main->{conf}->{HTTP_APP_ADDRESS}. ':' . $main->{conf}->{HTTP_APP_PORT}],
-						   workers => 10,
+						   workers => 8,
 						   pid_file => '/tmp/hypnotoad_oshi.pid'
 						  });
 $main->db_init;
@@ -447,15 +447,11 @@ get '/:fileid/*filename' => { filename => undef } => sub {
 			$urlpath =~ s/[^a-zA-Z0-9]//g;
 			my $row = $main->db_get_row('uploads', 'urlpath', $urlpath);
 
-			Mojo::IOLoop->subprocess(
-				sub {
-					my $subprocess = shift;
-					$main->{dbc}->run(sub {
-						my $dbh = shift;
-						$dbh->do("update uploads set hits = hits + 1 where urlpath = ?", undef, $urlpath );
-					}); 
-			}, sub {});
-			
+			$main->{dbc}->run(sub {
+				my $dbh = shift;
+				$dbh->do("update uploads set hits = hits + 1 where urlpath = ?", undef, $urlpath );
+			}); 
+
 			#try { utf8::encode($row->{'rpath'}) };
 
 			return $row;

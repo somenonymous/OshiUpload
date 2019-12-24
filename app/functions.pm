@@ -302,24 +302,7 @@ sub get_file {
 
 sub delete_file {
 	my ($self, $select_by, $id, $runmode) = @_;
-
-	if ( $runmode ) {
-		$self->delete_file_job( $select_by, $id );
-	} else {
-		Mojo::IOLoop->subprocess(
-			sub {
-				my $subprocess = shift;
-				$self->delete_file_job( $select_by, $id );
-				return 1;
-			},
-			sub {
-				my ($subprocess, $err, $row) = @_;
-	
-			}
-		);
-	}
-
-	
+	$self->delete_file_job( $select_by, $id );
 }
 
 sub delete_file_job {

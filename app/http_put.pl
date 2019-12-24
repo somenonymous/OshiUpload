@@ -12,10 +12,8 @@ use feature 'say';
 use bytes;
 
 use Mojo::IOLoop;
-use AnyEvent::Socket;
 
 use MIME::Base64;
-
 use Scalar::Util qw/looks_like_number/;
 
 require "./functions.pm";
@@ -36,7 +34,7 @@ my $INACTIVE_TIMEOUT_UPLOAD = $main->{conf}->{HTTP_PUT_INACTIVE_TIMEOUT_UPLOAD} 
 # in MB, the maximum upload size
 my $FILE_MAX_SIZE = $main->{conf}->{HTTP_UPLOAD_FILE_MAX_SIZE} || 1000;
 
-my $DEBUG = $main->{conf}->{HTTP_PUT_DEBUG} || 1;
+my $DEBUG = 4; #$main->{conf}->{HTTP_PUT_DEBUG} || 1;
 
 my $file_max_size_bytes = $FILE_MAX_SIZE * 1048576;
 my %ctimers; # dataless connections timers
@@ -105,11 +103,12 @@ my %uploads_chunks; # active upload connections sequential chunks (copy-on-write
 
  });
 
-tcp_server $PORTS->{'PUT'}->{address}||'127.0.0.1', $PORTS->{'PUT'}->{port}, sub {
-	my $fh  = shift;
 
-	my $io;
+Mojo::IOLoop->server({port => $PORTS->{'PUT'}->{port}, address => $PORTS->{'PUT'}->{address}||'127.0.0.1' } => sub {
+  my ($loop, $stream) = @_;
 
+	my $fh = $stream;
+	
 	my $inactivity;
 
 	my $name = $main->newfilename();
@@ -128,24 +127,29 @@ tcp_server $PORTS->{'PUT'}->{address}||'127.0.0.1', $PORTS->{'PUT'}->{port}, sub
 	
 	printf ("Client connected (%s) (%s)\n", $fh, $name) if $DEBUG;
 	
+	
 	$inactivity = Mojo::IOLoop->timer($INACTIVE_TIMEOUT_CONNECTION => sub {
 		my $loop = shift;
-		syswrite $fh, wrap_final_response("You're inactive, closing connection");
-		undef $io; clean_on_abort($name); 
+		$stream->write(wrap_final_response("You're inactive, closing connection")); 
+		$stream->close_gracefully; 
+		clean_on_abort($name); 
 	});
+	
 	$ctimers{$inactivity} = '';
 	
-	$io = AnyEvent->io (fh => $fh, poll => 'r', cb => sub {
+	$stream->on(close => sub {
+	  my $stream = shift;
+				
+		say "$stream ($name) closed" if $DEBUG;
+		$stream->close_gracefully; 
+		clean_on_abort($name);
+		finalize_transaction($name) if $iorefs{$name}->{is_body};
 
-		my $input = read ($fh, my $data, 8192);
-		
-		if (!$input) {
-			
-			say "$fh ($name) closed" if $DEBUG;
-			undef $io; clean_on_abort($name);
-			finalize_transaction($name) if $iorefs{$name}->{is_body};
-			
-		} else {
+	});
+	
+  $stream->on(read => sub {
+    my ($stream, $data) = @_;
+
 			return if exists $uploads{$name} && $uploads{$name}->{finished};
 			$iorefs{$name}->{chunk_count}++;
 
@@ -156,8 +160,10 @@ tcp_server $PORTS->{'PUT'}->{address}||'127.0.0.1', $PORTS->{'PUT'}->{port}, sub
 					my $error;
 					($data, $error) = process_encoding_chunked($name, $data);
 					if ( $error ) {
-							syswrite $fh, wrap_final_response($error);
-							undef $io; clean_on_abort($name); return;
+							$stream->write(wrap_final_response($error));
+							#undef $io; 
+							$stream->close_gracefully; 
+							clean_on_abort($name); return;
 					}
 				}
 				
@@ -176,10 +182,14 @@ tcp_server $PORTS->{'PUT'}->{address}||'127.0.0.1', $PORTS->{'PUT'}->{port}, sub
 					chunk_copy_to_ram($name, $iorefs{$name}->{chunk_count}, $lastchunk);
 					finalize_transaction($name);
 					
-					undef $io;
+					#undef $io;
 					
-					syswrite $fh, wrap_final_response( make_response($uploads{$name}->{path},$uploads{$name}->{mpath}) );
-
+					
+					
+					$stream->write( wrap_final_response( make_response($uploads{$name}->{path},$uploads{$name}->{mpath}) ) );
+					
+					$stream->close_gracefully; 
+					
 				} else {
 					$iorefs{$name}->{lastchunk} = time;
 					# copy body chunk
@@ -187,8 +197,10 @@ tcp_server $PORTS->{'PUT'}->{address}||'127.0.0.1', $PORTS->{'PUT'}->{port}, sub
 				}
 				
 			} elsif ( $iorefs{$name}->{chunk_count} >= 3 ) {
-				syswrite $fh, wrap_final_response("No HTTP header present, closing connection");
-				undef $io; clean_on_abort($name); return;
+				$stream->write( wrap_final_response("No HTTP header present, closing connection") );
+				#undef $io; 
+				$stream->close_gracefully; 
+				clean_on_abort($name); return;
 			} else {
 				# first data chunk is processed here
 				Mojo::IOLoop->remove($inactivity) if exists $ctimers{$inactivity}; 
@@ -209,20 +221,26 @@ tcp_server $PORTS->{'PUT'}->{address}||'127.0.0.1', $PORTS->{'PUT'}->{port}, sub
 					
 					if (exists $h{'content-length'}) {
 						unless ( looks_like_number $h{'content-length'} ) {
-							syswrite $fh, wrap_final_response("Wrong length format, closing connection");
-							undef $io; clean_on_abort($name); return;
+							$stream->write( wrap_final_response("Wrong length format, closing connection") );
+							#undef $io; 
+							$stream->close_gracefully; 
+							clean_on_abort($name); return;
 						}
 						if ( int $h{'content-length'} > $file_max_size_bytes ) {
-							syswrite $fh, wrap_final_response("Your upload exceeds ${FILE_MAX_SIZE}MB, closing connection");
-							undef $io; clean_on_abort($name); return;
+							$stream->write( wrap_final_response("Your upload exceeds ${FILE_MAX_SIZE}MB, closing connection") );
+							#undef $io; 
+							$stream->close_gracefully; 
+							clean_on_abort($name); return;
 							
 						}
 						$iorefs{$name}->{content_length} = $h{'content-length'};
 					} elsif (exists $h{'transfer-encoding'} and lc $h{'transfer-encoding'} eq 'chunked') {
 						$iorefs{$name}->{chunked_length} = $iorefs{$name}->{chunk_count} + 1;
 					} else {
-						syswrite $fh, wrap_final_response("Content-length is missing in your headers, closing connection");
-						undef $io; clean_on_abort($name); return;
+						$stream->write( wrap_final_response("Content-length is missing in your headers, closing connection") );
+						#undef $io; 
+						$stream->close_gracefully; 
+						clean_on_abort($name); return;
 					}
 
 					$uploads{$name} = { finished => 0, mpath => $iorefs{$name}->{'nameadmin'} } unless exists $uploads{$name};
@@ -246,8 +264,10 @@ tcp_server $PORTS->{'PUT'}->{address}||'127.0.0.1', $PORTS->{'PUT'}->{port}, sub
 									my @ex = $main->expiry_check($uploads{$name}->{expire});
 							
 									if ( $ex[0] != 1 ) {
-										syswrite $fh, wrap_final_response($ex[1]);
-										undef $io; clean_on_abort($name); finalize_transaction($name, 1);  return;
+										$stream->write( wrap_final_response($ex[1]) );
+										#undef $io; 
+										$stream->close_gracefully; 
+										clean_on_abort($name); finalize_transaction($name, 1);  return;
 									}
 								}
 							}
@@ -264,8 +284,10 @@ tcp_server $PORTS->{'PUT'}->{address}||'127.0.0.1', $PORTS->{'PUT'}->{port}, sub
 						my $error;
 						($firstdatachunk, $error) = process_encoding_chunked($name, $firstdatachunk);
 						if ( $error ) {
-								syswrite $fh, wrap_final_response($error);
-								undef $io; clean_on_abort($name); finalize_transaction($name, 1); return;
+								$stream->write( wrap_final_response($error) );
+								#undef $io; 
+								$stream->close_gracefully; 
+								clean_on_abort($name); finalize_transaction($name, 1); return;
 						}
 					}
 					
@@ -277,8 +299,9 @@ tcp_server $PORTS->{'PUT'}->{address}||'127.0.0.1', $PORTS->{'PUT'}->{port}, sub
 						# receive body last chunk
 						chunk_copy_to_ram($name, $iorefs{$name}->{chunk_count}, $lastchunk);
 						finalize_transaction($name);
-						syswrite $fh, wrap_final_response( make_response($uploads{$name}->{path},$uploads{$name}->{mpath}) );
-						undef $io;
+						$stream->write( wrap_final_response( make_response($uploads{$name}->{path},$uploads{$name}->{mpath}) )  );
+						#undef $io;
+						$stream->close_gracefully; 
 						return;
 					} else {
 						chunk_copy_to_ram($name, $iorefs{$name}->{chunk_count}, $firstdatachunk);
@@ -287,21 +310,25 @@ tcp_server $PORTS->{'PUT'}->{address}||'127.0.0.1', $PORTS->{'PUT'}->{port}, sub
 					$iorefs{$name}->{header} .= $data
 				}
 			}
-			
-		}
-	});
+
+  });
+  
 
 	$iorefs{$name}->{proginactivity} = Mojo::IOLoop->recurring(1 => sub {
 			my $loop = shift;
 			return unless exists $iorefs{$name};
 			if ( $iorefs{$name}->{lastchunk} && (time - $iorefs{$name}->{lastchunk}) > $INACTIVE_TIMEOUT_UPLOAD ) {
-				say "$io is inactive" if $DEBUG;
+				say "$stream is inactive" if $DEBUG;
 				finalize_transaction($name);
-				undef $io;
+				$stream->close_gracefully; 
 			}
 	});
 	
-};
+});
+
+Mojo::IOLoop->start unless Mojo::IOLoop->is_running;
+
+
 
 sub process_encoding_chunked {
 	my $name = shift;
@@ -357,7 +384,7 @@ sub make_response {
 	my $path = shift;
 	my $mpath = shift;
 	
-	return $main->textonly_output($path,$mpath);
+	return "\r\n" . $main->textonly_output($path,$mpath);
 }
 
 

@@ -36,7 +36,7 @@ The engine will create all the necessary database tables automatically on the fi
 Debian/Ubuntu
 
 ```
-apt install libanyevent-perl libmojolicious-perl libdbix-connector-perl libtry-tiny-perl liburi-encode-perl libdata-random-perl libgd-securityimage-perl libjavascript-minifier-perl libfile-libmagic-perl libclamav-client-perl
+apt install libmojolicious-perl libdbix-connector-perl libtry-tiny-perl liburi-encode-perl libdata-random-perl libgd-securityimage-perl libjavascript-minifier-perl libfile-libmagic-perl libclamav-client-perl
 apt install libdbd-sqlite3-perl # for SQLite as database
 apt install libdbd-mysql-perl # for MySQL/MariaDB as database
 cpan -i Short::URL # It may not be available in packages
@@ -45,7 +45,7 @@ cpan -i Short::URL # It may not be available in packages
 CPAN
 
 ```
-cpan -i AnyEvent Mojolicious DBIx::Connector Try::Tiny URI::Encode Data::Random Short::URL GD::SecurityImage JavaScript::Minifier File::LibMagic ClamAV::Client
+cpan -i Mojolicious DBIx::Connector Try::Tiny URI::Encode Data::Random Short::URL GD::SecurityImage JavaScript::Minifier File::LibMagic ClamAV::Client
 cpan -i DBD::SQLite # for SQLite as database
 cpan -i DBD::mysql # for MySQL/MariaDB as database
 ```
