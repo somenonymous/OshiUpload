@@ -1,18 +1,23 @@
 % layout 'main', title => 'Oshi - Temporary file storage';
 
 <div class="domainsinfo text-secondary">
-<div>Clearnet CDN: <a href="<%= $MAIN_DOMAIN_PROTO %>://<%= $MAIN_DOMAIN %>" class="text-secondary"><%= $MAIN_DOMAIN %></a></div>
-<div>Clearnet direct: <a href="<%= $DIRECT_DOMAIN_PROTO %>://<%= $DIRECT_DOMAIN %>" class="text-secondary"><%= $DIRECT_DOMAIN %></a></div>
-<div>Tor: <a href="<%= $ONION_DOMAIN_PROTO %>://<%= $ONION_DOMAIN %> " class="text-secondary"><%= $ONION_DOMAIN %></a></div>
+% if (defined $CDN_DOMAIN) {
+<div>CDN domain: <a href="<%= $CDN_DOMAIN_PROTO %>://<%= $CDN_DOMAIN %>" class="text-secondary"><%= $CDN_DOMAIN %></a></div>
+% } if (defined $DIRECT_DOMAIN) {
+<div>Clearnet domain: <a href="<%= $DIRECT_DOMAIN_PROTO %>://<%= $DIRECT_DOMAIN %>" class="text-secondary"><%= $DIRECT_DOMAIN %></a></div>
+% } if (defined $ONION_DOMAIN) {
+<div>Tor domain: <a href="<%= $ONION_DOMAIN_PROTO %>://<%= $ONION_DOMAIN %> " class="text-secondary"><%= $ONION_DOMAIN %></a></div>
+% }
 </div>
 
 <div class="h-100 d-flex align-items-center ">
 <div class="text-center align-self-center mx-auto">
 <div class="row align-items-center h-100">
 	<div class="col">
-		<strong>We hope Internet Explorer is just your spoofed agent, but we feel sorry if you really use it.</strong><br> Install the latest <a href="https://www.torproject.org/download/">Firefox</a> or <a href="https://wiki.debian.org/Chromium">Chromium</a>
+		<div><strong>Internet Explorer user-agent detected</strong></div>
+		<div class="mb-4 text-danger">Use Chromium/Firefox-based browsers for extended site functionality</div>
 
-		<form action="/" method="post" enctype="multipart/form-data">
+		<form action="<%= $c->req->url->to_abs->path =~  /\Q$INSECUREPATH\E/ ? $c->req->url->to_abs->path  : '/' %>" method="post" enctype="multipart/form-data">
 		 <input type="hidden" name="nojs" value="1"><input type="file" name="f" multiple>
 
 		  <div class="form-row align-items-center">

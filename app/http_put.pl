@@ -6,6 +6,9 @@
 # This situation may change soon and we will move on to a more convenient solution whether me or someone else
 # decides to write a decent addon for Mojolicious
 
+### UPDATE:      Mojolicious now supports PUT uploads and it's integrated in webapp.pl
+###              This program still can be used as a stand-alone server for PUT requests
+
 use strict;
 use warnings;
 use feature 'say';
@@ -34,7 +37,7 @@ my $INACTIVE_TIMEOUT_UPLOAD = $main->{conf}->{HTTP_PUT_INACTIVE_TIMEOUT_UPLOAD} 
 # in MB, the maximum upload size
 my $FILE_MAX_SIZE = $main->{conf}->{HTTP_UPLOAD_FILE_MAX_SIZE} || 1000;
 
-my $DEBUG = 4; #$main->{conf}->{HTTP_PUT_DEBUG} || 1;
+my $DEBUG = defined $main->{conf}->{HTTP_PUT_DEBUG} ? int $main->{conf}->{HTTP_PUT_DEBUG} : 1;
 
 my $file_max_size_bytes = $FILE_MAX_SIZE * 1048576;
 my %ctimers; # dataless connections timers
@@ -42,7 +45,29 @@ my %iorefs; # active upload connections $io references to %uploads
 my %uploads; # active upload connections data
 my %uploads_chunks; # active upload connections sequential chunks (copy-on-write RAM buffer)
 
- Mojo::IOLoop->recurring(2 => sub {
+my @hashqueue;
+my %hashqueue_running;
+my $hashqueue_maxjobs = 4;
+if ( $main->{conf}->{UPLOAD_HASH_CALCULATION} ) {
+	Mojo::IOLoop->recurring(0.1 => sub {
+		my $ioloop = shift;
+		if ( @hashqueue && keys(%hashqueue_running) < $hashqueue_maxjobs) {
+			my $fileid =  shift @hashqueue;
+			$hashqueue_running{$fileid} = '';
+			my $subprocess = $ioloop->subprocess(sub {
+				say 'started process_file_hashsum for ' . $fileid if $DEBUG or $main->{conf}->{DEBUG} > 0;
+				$main->process_file_hashsum( $fileid );
+			}, sub {
+				my ($subprocess, $err, @results) = @_;
+				say '[error] ' . $err if $err && ($DEBUG or $main->{conf}->{DEBUG} > 0);
+				say 'finished process_file_hashsum for ' . $fileid if $DEBUG or $main->{conf}->{DEBUG} > 0;
+				delete $hashqueue_running{$fileid};
+			});
+		}
+	});
+}
+
+Mojo::IOLoop->recurring(0.5 => sub {
 
 	foreach(keys %uploads ) {
 		my $name = $_;
@@ -53,22 +78,31 @@ my %uploads_chunks; # active upload connections sequential chunks (copy-on-write
 			if ( $uploads{$name}->{finished} ) {
 				unless ( $uploads{$name}->{error} || $uploads{$name}->{length} < 1) {
 					# upload completed, pass the filename to the core method
-					say "Processing upload - " . $name if $DEBUG;
-					$main->process_file(	
-										'http_put',
-										$uploads{$name}->{mpath},
-										$storage_path,
-										$uploads{$name}->{path}, 
-										$uploads{$name}->{filename}, 
-										$uploads{$name}->{length},
-										1,
-										$uploads{$name}->{expire}, 
-										(exists $uploads{$name}->{autodestroy} ? $uploads{$name}->{autodestroy} : 0)
-									);
+					my @datatobackend = (   'http_put',
+											$uploads{$name}->{mpath},
+											$storage_path,
+											$uploads{$name}->{path}, 
+											$uploads{$name}->{filename}, 
+											$uploads{$name}->{length},
+											1,
+											$uploads{$name}->{expire}, 
+											(exists $uploads{$name}->{autodestroy} ? $uploads{$name}->{autodestroy} : 0)
+										);
+					Mojo::IOLoop->subprocess(
+					  sub {
+						say "Processing upload - " . $name if $DEBUG;
+						$main->process_file(@datatobackend);
+					  },
+					  sub {
+					    my ($subprocess, $err) = @_;
+						say '[error] ' .  $err if ( $err && $DEBUG );
+						push @hashqueue, $datatobackend[1] if $main->{conf}->{UPLOAD_HASH_CALCULATION};
+					  }
+					);
 				}
-					delete $uploads{$name};
-					delete $uploads_chunks{$name};
-					delete $iorefs{$name} if exists $iorefs{$name};
+				delete $uploads{$name};
+				delete $uploads_chunks{$name};
+				delete $iorefs{$name} if exists $iorefs{$name};
 			}
 			
 			next;
@@ -101,7 +135,7 @@ my %uploads_chunks; # active upload connections sequential chunks (copy-on-write
 			);
 	}
 
- });
+});
 
 
 Mojo::IOLoop->server({port => $PORTS->{'PUT'}->{port}, address => $PORTS->{'PUT'}->{address}||'127.0.0.1' } => sub {
@@ -326,6 +360,9 @@ Mojo::IOLoop->server({port => $PORTS->{'PUT'}->{port}, address => $PORTS->{'PUT'
 	
 });
 
+say "[info] Standalone HTTP PUT server started (http_put.pl)" if $DEBUG or $main->{conf}->{DEBUG} > 0;
+say "[info] Listening on $PORTS->{PUT}->{address}:$PORTS->{PUT}->{port} (PUT)" if $DEBUG or $main->{conf}->{DEBUG} > 0;
+
 Mojo::IOLoop->start unless Mojo::IOLoop->is_running;
 
 
@@ -386,6 +423,3 @@ sub make_response {
 	
 	return "\r\n" . $main->textonly_output($path,$mpath);
 }
-
-
-Mojo::IOLoop->start;

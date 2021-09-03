@@ -4,15 +4,17 @@
 
 <div class="text-center" style="background-color:#f9f9fa">
 <div class="row"><div class="col text-right text-secondary">Clearnet DL</div>
-	<div class="col text-left"><a target="_blank" href="<%= $MAIN_DOMAIN_PROTO %>://<%= $MAIN_DOMAIN . '/' . $file->{urlpath} . ( $file->{shorturl} == 0 ? '/'.$file->{rpath} : '' ) %>">
-		<%= $MAIN_DOMAIN . '/' . $file->{urlpath} . ( $file->{shorturl} == 0 ? '/'.$file->{rpath} : '' ) %>
+	<div class="col text-left"><a target="_blank" href="<%= $USE_HTTP_HOST ? $BASEURLPROTO : $MAIN_DOMAIN_PROTO %>://<%= ($USE_HTTP_HOST ? $BASEURL : $MAIN_DOMAIN) . '/' . $file->{urlpath} . ( $file->{shorturl} == 0 ? '/'.$file->{rpath} : '' ) %>">
+		<%= ($USE_HTTP_HOST ? $BASEURL : $MAIN_DOMAIN) . '/' . $file->{urlpath} . ( $file->{shorturl} == 0 ? '/'.$file->{rpath} : '' ) %>
 	</a></div>
 </div>
+% if (defined $ONION_DOMAIN and $ONION_DOMAIN ne $MAIN_DOMAIN) {
 <div class="row"><div class="col text-right text-secondary">Tor DL</div>
 	<div class="col text-left"><a target="_blank" href="<%= $ONION_DOMAIN_PROTO %>://<%= $ONION_DOMAIN . '/' . $file->{urlpath}  . ( $file->{shorturl} == 0 ? '/'.$file->{rpath} : '' ) %>">
 		<%= $ONION_DOMAIN . '/' . $file->{urlpath} . ( $file->{shorturl} == 0 ? '/'.$file->{rpath} : '' ) %>
 	</a></div>
 </div>
+% }
 <div class="row"><div class="col text-right text-secondary">Size</div><div class="col text-left"><%= $file->{size} %></div></div>
 <div class="row"><div class="col text-right text-secondary">Type</div><div class="col text-left"><%= $file->{ftype} %></div></div>
 <div class="row"><div class="col text-right text-secondary">SHA<%= $FILE_HASH_TYPE %> Hashsum</div><div class="col text-left"><%= $file->{hashsum} %></div></div>

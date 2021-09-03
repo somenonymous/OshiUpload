@@ -22,7 +22,7 @@ The duplicate files detection feature allows to create links to existing files i
 
 ### Prepare
 
-`git clone https://github.com/somenonymous/OshiUpload` or `git clone https://git.volatile.bz/cgit/pipe/OshiUpload`
+`git clone https://github.com/somenonymous/OshiUpload`
 
 `cd OshiUpload/app`
 
@@ -36,19 +36,20 @@ The engine will create all the necessary database tables automatically on the fi
 Debian/Ubuntu
 
 ```
-apt install libmojolicious-perl libdbix-connector-perl libtry-tiny-perl liburi-encode-perl libdata-random-perl libgd-securityimage-perl libjavascript-minifier-perl libfile-libmagic-perl libclamav-client-perl
+apt install libmojolicious-perl libdbix-connector-perl libtry-tiny-perl liburi-encode-perl libdata-random-perl libstring-random-perl libgd-securityimage-perl libjavascript-minifier-perl libfile-libmagic-perl libclamav-client-perl
 apt install libdbd-sqlite3-perl # for SQLite as database
 apt install libdbd-mysql-perl # for MySQL/MariaDB as database
-cpan -i Short::URL # It may not be available in packages
 ```
 
-CPAN
+CPAN or perlbrew
 
 ```
-cpan -i Mojolicious DBIx::Connector Try::Tiny URI::Encode Data::Random Short::URL GD::SecurityImage JavaScript::Minifier File::LibMagic ClamAV::Client
+cpan -i Mojolicious DBIx::Connector Try::Tiny URI::Encode Data::Random String::Random GD::SecurityImage JavaScript::Minifier File::LibMagic ClamAV::Client
 cpan -i DBD::SQLite # for SQLite as database
 cpan -i DBD::mysql # for MySQL/MariaDB as database
 ```
+
+If you want to install modules as non-root, substitute `cpan` with `cpanm` from `perlbrew` (get it on [https://perlbrew.pl](https://perlbrew.pl) if your distro doesn't ship the `perlbrew` package)
 
 
 ### Run

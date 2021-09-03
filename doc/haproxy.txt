@@ -1,9 +1,4 @@
-# We use HAProxy to route PUT requests to http_put.pl and other requests to webapp.pl
-# HAProxy doesn't impact performance and its condition management is robust (unlike nginx...)
-#
-# If you don't plan to use 'curl -T' you may use a standard reverse-proxy configuration 
-# and point all requests to http://127.0.0.1:4019
-#
+# Example configuration for HAProxy with https://github.com/somenonymous/OshiUpload
 
 global
 	# daemon
@@ -11,25 +6,61 @@ global
 	tune.ssl.default-dh-param 2048
 
 defaults
-	# 30 Seconds
-	timeout connect 300000ms
-	timeout client 300000ms
-	timeout server 30000ms
-
-
-frontend localhost
-    bind *:80
-    bind *:443 ssl crt /path/to/your_ssl_bundle.pem
+	# timeout for client handshakes and eof's optimized for anonymous overlay networks
+	timeout client 1m
+	# backend inactivity timeout
+	timeout server 2m
+	# backend connection timeout
+	timeout connect 10s
+	
+frontend http
+	bind *:80
     mode http
-    acl is_put method PUT
-    use_backend put_uploader if is_put
+
+    acl insecure_exception path_reg ^\/nossl
+    redirect scheme https code 301 unless insecure_exception
+
     default_backend default
 
-backend put_uploader
-	mode http
-	server put_backend 127.0.0.1:4020
+frontend https
+    bind *:443 ssl crt /path/to/your_ssl_bundle.pem
+    mode http
+    http-request set-header X-Forwarded-Proto https
+
+    default_backend default
 
 backend default
 	mode http
 	option httpclose
 	server default_backend 127.0.0.1:4019
+
+
+
+# the configuration below only needed when remote reverse-proxy server is used (non-local configuration)
+# also check reverse_proxy_tcp.txt for iptables forwarding instead using HAProxy
+#
+#frontend tcp_raw
+#    mode tcp
+#    bind :7777
+#    default_backend tcpupload_raw
+#    
+#frontend tcp_b64
+#    mode tcp
+#    bind :7778
+#    default_backend tcpupload_base64
+#   
+#frontend tcp_hex
+#    mode tcp
+#    bind :7779
+#    default_backend tcpupload_hex
+#
+# Assuming the backend is at 10.0.0.1
+#backend tcpupload_raw
+#	mode tcp
+#    server tcpraw 10.0.0.1:7777
+#backend tcpupload_base64
+#	mode tcp
+#    server tcpraw 10.0.0.1:7778
+#backend tcpupload_hex
+#	mode tcp
+#    server tcpraw 10.0.0.1:7779

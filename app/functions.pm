@@ -6,7 +6,7 @@ use warnings;
 use File::LibMagic;
 use Digest::SHA qw/sha1_hex sha256_hex/;
 use Data::Random qw(:all);
-use Short::URL;
+use String::Random;
 use URI::Encode qw(uri_encode uri_decode);
 use Time::HiRes;
 use DBIx::Connector;
@@ -23,8 +23,8 @@ sub new {
  $self->load_config($configpath);
  $self->checkups;
 
- $self->{ShortURL} = Short::URL->new;
- $self->{ShortURL}->alphabet([qw/a b c d e f g h i j k m n o p q r s t u v w x y z A B C D E F G H J K L M N P Q R S T U V W X Y Z/]);
+ $self->{ShortURL} = new String::Random;
+ $self->{ShortURL}->{'X'} = [qw/a b c d e f g h i j k m n o p q r s t u v w x y z A B C D E F G H J K L M N P Q R S T U V W X Y Z/];
 
  $self->{libmagic} = File::LibMagic->new();
 
@@ -46,6 +46,8 @@ sub template_vars {
 		MAX_FILE_SIZE_TCP => $self->{conf}->{TCP_UPLOAD_FILE_MAX_SIZE},
 		MAIN_DOMAIN => $self->{conf}->{$self->{conf}->{UPLOAD_DOMAIN_MAIN}},
 		MAIN_DOMAIN_PROTO => $self->{conf}->{$self->{conf}->{UPLOAD_DOMAIN_MAIN} . '_PROTO'},
+		CDN_DOMAIN => $self->{conf}->{'UPLOAD_DOMAIN_CLEARNET_CDN'},
+		CDN_DOMAIN_PROTO => $self->{conf}->{'UPLOAD_DOMAIN_CLEARNET_CDN_PROTO'},
 		DIRECT_DOMAIN => $self->{conf}->{'UPLOAD_DOMAIN_CLEARNET'},
 		DIRECT_DOMAIN_PROTO => $self->{conf}->{'UPLOAD_DOMAIN_CLEARNET_PROTO'},
 		ONION_DOMAIN => $self->{conf}->{UPLOAD_DOMAIN_ONION},
@@ -56,6 +58,7 @@ sub template_vars {
 		TCP_PORT_HEX => $self->{conf}->{TCP_HEX_PORT},
 		MANAGE_ROUTE => $self->{conf}->{UPLOAD_MANAGE_ROUTE},
 		USE_HTTP_HOST => $self->{conf}->{UPLOAD_LINK_USE_HOST},
+		INSECUREPATH => $self->{conf}->{HTTP_INSECUREPATH},
 		ABUSE_CAPTCHA_REQUIRED => $self->{conf}->{CAPTCHA_SHOW_FOR_ABUSE},
 	};
 
@@ -63,54 +66,78 @@ sub template_vars {
 }
 
 sub textonly_output {
-	my ($self, $path, $mpath) = @_;
+	my ($self, $path, $mpath, $customhost) = @_;
 
-	my $str = $self->{conf}->{$self->{conf}->{UPLOAD_DOMAIN_MAIN} . '_PROTO'} . '://' .  
-			  $self->{conf}->{$self->{conf}->{UPLOAD_DOMAIN_MAIN}}  . 
+	my $str = ( defined $customhost ? $customhost : $self->{MAIN_DOMAIN_PROTO} . '://' .  
+			  $self->{MAIN_DOMAIN} ) . 
 			  $self->{conf}->{UPLOAD_MANAGE_ROUTE} . $mpath . " [Admin]\r\n";
+			  
+	$str .= ( defined $customhost ? $customhost : $self->{MAIN_DOMAIN_PROTO} . '://' .  $self->{MAIN_DOMAIN} ) . '/' . $path . " [Download]\r\n";
 
-	$str .= $self->{conf}->{$self->{conf}->{UPLOAD_DOMAIN_MAIN} . '_PROTO'} . '://' . 
-			$self->{conf}->{$self->{conf}->{UPLOAD_DOMAIN_MAIN}} . '/' . $path . " [CDN download]\r\n";
-			
-	$str .= $self->{conf}->{'UPLOAD_DOMAIN_CLEARNET_PROTO'} . '://' . 
-			$self->{conf}->{'UPLOAD_DOMAIN_CLEARNET'} . '/' . $path . " [Direct IP download]\r\n";
-			
-	$str .= $self->{conf}->{'UPLOAD_DOMAIN_ONION_PROTO'} . '://' . 
-			$self->{conf}->{'UPLOAD_DOMAIN_ONION'} . '/' . $path . " [Tor download]\r\n";
-			
+	if ( $self->{conf}->{UPLOAD_DOMAINS_ENABLED} eq 'ALL' or $self->{conf}->{UPLOAD_DOMAINS_ENABLED} eq 'UPLOAD_DOMAIN_CLEARNET_CDN' )
+	{
+		$str .= $self->{conf}->{'UPLOAD_DOMAIN_CLEARNET_CDN_PROTO'} . '://' . 
+			$self->{conf}->{'UPLOAD_DOMAIN_CLEARNET_CDN'} . '/' . $path . " [CDN download]\r\n"
+			if exists $self->{conf}->{UPLOAD_DOMAIN_CLEARNET_CDN} and $self->{conf}->{UPLOAD_DOMAIN_CLEARNET_CDN} ne $self->{MAIN_DOMAIN};
+	}
+
+	if ( $self->{conf}->{UPLOAD_DOMAINS_ENABLED} eq 'ALL' or $self->{conf}->{UPLOAD_DOMAINS_ENABLED} eq 'UPLOAD_DOMAIN_CLEARNET' )
+	{
+		$str .= $self->{conf}->{'UPLOAD_DOMAIN_CLEARNET_PROTO'} . '://' . 
+			$self->{conf}->{'UPLOAD_DOMAIN_CLEARNET'} . '/' . $path . " [Direct IP download]\r\n"
+			if exists $self->{conf}->{UPLOAD_DOMAIN_CLEARNET} and $self->{conf}->{UPLOAD_DOMAIN_CLEARNET} ne $self->{MAIN_DOMAIN};
+	}
+
+	if ( $self->{conf}->{UPLOAD_DOMAINS_ENABLED} eq 'ALL' or $self->{conf}->{UPLOAD_DOMAINS_ENABLED} eq 'UPLOAD_DOMAIN_ONION' )
+	{
+		$str .= $self->{conf}->{'UPLOAD_DOMAIN_ONION_PROTO'} . '://' . 
+			$self->{conf}->{'UPLOAD_DOMAIN_ONION'} . '/' . $path . " [Tor download]\r\n"
+			if exists $self->{conf}->{UPLOAD_DOMAIN_ONION} and $self->{conf}->{UPLOAD_DOMAIN_ONION} ne $self->{MAIN_DOMAIN};
+	}
+	
 	return $str;
-
 }
 
 sub checkups {
 	my $self = shift;
-	
+	# todo: move to YAML
 	die "UPLOAD_FILENAME_MAX_LENGTH is not defined" unless exists $self->{conf}->{UPLOAD_FILENAME_MAX_LENGTH};
 	die "UPLOAD_DOMAIN_MAIN is not defined" unless exists $self->{conf}->{UPLOAD_DOMAIN_MAIN};
-	die $self->{conf}->{$self->{conf}->{UPLOAD_DOMAIN_MAIN}} . " is not defined" unless exists $self->{conf}->{$self->{conf}->{UPLOAD_DOMAIN_MAIN}};
+	die $self->{conf}->{UPLOAD_DOMAIN_MAIN} . " is not defined" unless exists $self->{conf}->{$self->{conf}->{UPLOAD_DOMAIN_MAIN}};
+	die "UPLOAD_STORAGE_PATH is not defined" unless exists $self->{conf}->{UPLOAD_STORAGE_PATH};
 
-	if ( exists $self->{conf}->{UPLOAD_DOMAIN_SHOW_SECONDARY_UPLOAD_LINK}
-	     && $self->{conf}->{UPLOAD_DOMAIN_SHOW_SECONDARY_UPLOAD_LINK} == 1 ) {
-	 die "UPLOAD_DOMAIN_SECONDARY is not defined" unless exists $self->{conf}->{UPLOAD_DOMAIN_SECONDARY};
-	 die $self->{conf}->{$self->{conf}->{UPLOAD_DOMAIN_SECONDARY}} . " is not defined" unless exists $self->{conf}->{$self->{conf}->{UPLOAD_DOMAIN_SECONDARY}};
-	}
-	if ( exists $self->{conf}->{UPLOAD_DOMAIN_SHOW_TERTIARY_UPLOAD_LINK}
-	     && $self->{conf}->{UPLOAD_DOMAIN_SHOW_TERTIARY_UPLOAD_LINK} == 1 ) {
-	 die "UPLOAD_DOMAIN_TERTIARY is not defined" unless exists $self->{conf}->{UPLOAD_DOMAIN_TERTIARY};
-	 die $self->{conf}->{$self->{conf}->{UPLOAD_DOMAIN_TERTIARY}} . " is not defined" unless exists $self->{conf}->{$self->{conf}->{UPLOAD_DOMAIN_TERTIARY}};
-	}
+	$self->{MAIN_DOMAIN} = $self->{conf}->{$self->{conf}->{UPLOAD_DOMAIN_MAIN}};
+	$self->{MAIN_DOMAIN_PROTO} = $self->{conf}->{$self->{conf}->{UPLOAD_DOMAIN_MAIN} . '_PROTO'};
+	$self->{conf}->{UPLOAD_STORAGE_PATH} .= '/' unless $self->{conf}->{UPLOAD_STORAGE_PATH} =~ /\/$/;
+	$self->{conf}->{UPLOAD_STORAGE_PATH} =~ s/[\/]+/\//g;
 
-	unless ( exists $self->{conf}->{CONTENT_VIEW_BEFORE_SIZE} && looks_like_number $self->{conf}->{CONTENT_VIEW_BEFORE_SIZE} ) {
-		$self->{conf}->{CONTENT_VIEW_BEFORE_SIZE} = 2000000;
-	}
-	
+	$self->{conf}->{MODULES_AUTOSTART} = 1 unless exists $self->{conf}->{MODULES_AUTOSTART};
+	$self->{conf}->{CONTENT_VIEW_UNTIL_SIZE} = 2000000 unless exists $self->{conf}->{CONTENT_VIEW_UNTIL_SIZE};
+	$self->{conf}->{HTTP_INSECUREPATH} = 'insecure' unless exists $self->{conf}->{HTTP_INSECUREPATH};
+	$self->{conf}->{HTTP_INSECUREPATH} =~ s/[\/]+/\//g;
+	$self->{conf}->{UPLOAD_DOMAIN_TCP} = $self->{MAIN_DOMAIN} unless exists $self->{conf}->{UPLOAD_DOMAIN_TCP};
+	$self->{conf}->{UPLOAD_FILE_PERMISSIONS} =  exists $self->{conf}->{UPLOAD_FILE_PERMISSIONS} ? oct $self->{conf}->{UPLOAD_FILE_PERMISSIONS} : 0440;
+	$self->{conf}->{CLAMAV_SCANS_ENABLED} = exists $self->{conf}->{CLAMAV_SCANS_ENABLED} ? int $self->{conf}->{CLAMAV_SCANS_ENABLED} : 0;
+	$self->{conf}->{CLAMAV_SCANS_LOG} = undef unless exists $self->{conf}->{CLAMAV_SCANS_LOG};
+	$self->{conf}->{UPLOAD_HASH_CALCULATION} = exists $self->{conf}->{UPLOAD_HASH_CALCULATION} ? int $self->{conf}->{UPLOAD_HASH_CALCULATION} : 1;
+	$self->{conf}->{TCP_RAW_ADDRESS} = '127.0.0.1' unless exists $self->{conf}->{TCP_RAW_ADDRESS};
+	$self->{conf}->{TCP_BASE64_ADDRESS} = '127.0.0.1' unless exists $self->{conf}->{TCP_BASE64_ADDRESS};
+	$self->{conf}->{TCP_HEX_ADDRESS} = '127.0.0.1' unless exists $self->{conf}->{TCP_HEX_ADDRESS};
+	$self->{conf}->{TCP_RAW_PORT} = 7777 unless exists $self->{conf}->{TCP_RAW_PORT};
+	$self->{conf}->{TCP_BASE64_PORT} = 7778 unless exists $self->{conf}->{TCP_BASE64_PORT};
+	$self->{conf}->{TCP_HEX_PORT} = 7779 unless exists $self->{conf}->{TCP_HEX_PORT};
+
 	$self->{SHORTURLMAXLEN} = 16;
 	$self->{FNMAXLEN} = exists $self->{conf}->{UPLOAD_FILENAME_MAX_LENGTH}?$self->{conf}->{UPLOAD_FILENAME_MAX_LENGTH}:100;
 	$self->{FNMAXLEN} -= $self->{SHORTURLMAXLEN}; 
 	$self->{HASHTYPE} = exists $self->{conf}->{UPLOAD_TRACK_DUPLICATES_HASHTYPE}?$self->{conf}->{UPLOAD_TRACK_DUPLICATES_HASHTYPE}:1;
 	$self->{CAPTCHA_TOKEN_TIME} = exists $self->{conf}->{CAPTCHA_TOKEN_EXPIRE_TIME} ? $self->{conf}->{CAPTCHA_TOKEN_EXPIRE_TIME} : 300;
 	$self->{CAPTCHA_TOKEN_TIME} = 300 if int $self->{CAPTCHA_TOKEN_TIME} < 1;
-	
+	$self->{RESTRICTED_FILE_TYPES} = exists $self->{conf}->{UPLOAD_FORCE_DESTROYONDL_TYPES} ? [split (/\s+/, $self->{conf}->{UPLOAD_FORCE_DESTROYONDL_TYPES})] : [];
+	$self->{RESTRICTED_FILE_EXTENSIONS} = exists $self->{conf}->{UPLOAD_FORCE_DESTROYONDL_EXTENSIONS} ? [split (/\s+/, $self->{conf}->{UPLOAD_FORCE_DESTROYONDL_EXTENSIONS})] : [];
+	$self->{RESTRICTED_FILE_HITLIMIT} = exists $self->{conf}->{UPLOAD_FORCE_DESTROYONDL_AFTER_HITS} ? int $self->{conf}->{UPLOAD_FORCE_DESTROYONDL_AFTER_HITS} : 1;
+	$self->{CLAMAV_FILE_TYPES} = exists $self->{conf}->{CLAMAV_SCANS_TYPES} ? [split (/\s+/, $self->{conf}->{CLAMAV_SCANS_TYPES})] : [];
+
 }
 
 sub newfilename {
@@ -118,9 +145,8 @@ sub newfilename {
 	my $type = shift || '';
 	my $filename = shift || '';
 	
-	my $randomstr = rand_chars ( set => 'alpha', min => 10, max => 20 );
-	
 	if ( $type eq 'manage' ) {
+		my $randomstr = rand_chars ( set => 'alpha', min => 10, max => 20 );
 		return sha1_hex(Time::HiRes::time . $randomstr);
 	}
 	elsif ( $type eq 'random' ) {
@@ -129,13 +155,14 @@ sub newfilename {
 		return rand_chars ( set => 'alpha', min => 4, max => 4 ) . $ext;
 	}
 	
-	my $randomname = $self->{ShortURL}->encode( (10+int(rand(99))) . substr(CORE::time, 2) );
+	my $randomname = $self->{ShortURL}->randpattern("XXXXXX");
+	
 	my $try = 0;
 	while ( $try < 5) {
 		$try++;
 		if ( $self->db_get_row('uploads', 'urlpath', $randomname) ) {
 			say '[info] Duplicate generated, adding random char' . "($randomname)" if $self->{conf}->{DEBUG} > 0;
-			$randomname .= rand_chars ( set => 'alpha', min => 1, max => 1 );
+			$randomname .= $self->{ShortURL}->randpattern("X");
 		} else { $try = 5 }
 	}
 	return $randomname;
@@ -152,6 +179,7 @@ sub process_file {
 	my $shorturl = shift || 0;
 	my $expire = shift;
 	my $destroyafterload = shift || 0;
+	my $destroyafterload_locked = 0;
 	
 	my $file = $self->build_filepath($storage,$url,$filename);
 	
@@ -160,104 +188,112 @@ sub process_file {
 	}elsif ( !$expire ) {
 		$expire = $self->{conf}->{UPLOAD_TIME_DEFAULT}
 	}
+
+	my $isdup = 0;
+	my $type = 'file';
+	my $linktarget;
+	my $link = '';
 	
-	Mojo::IOLoop->subprocess(
-	  sub {
-	    my $subprocess = shift;
-	    
-		my $isdup = 0;
-		my $type = 'file';
-		my $linktarget;
-		my $link = '';
-		  
-		if ( $self->db_get_row('uploads', 'urlpath', $url) ) {
-			say '[fatal] URL already exists in DB ' . "($url)" if $self->{conf}->{DEBUG} > 0;
-			### newfilename() checks whether generated short url already exists, but 
-			### race-conditions may happen anyway between two+ hypnotoad workers under relatively high load.
-			### for now i decided to not process anyhow these cases, this may change in future
-			return 0;
-			###
-			my $oldfile = $file;
-			$url = substr($mpath,0,5) . $url;
-			$isdup = 1;
-			$file = $self->build_filepath($storage,$url,$filename);
-			if ( -f $file ) {
-				# this is a fatal condition
-				die('Found a duplicate after a found duplicate in DB: ' . $file);
-			}
-			rename ($oldfile, $file) or die($!);
+	chmod $self->{conf}->{UPLOAD_FILE_PERMISSIONS}, $file;
+	
+	if ( $self->db_get_row('uploads', 'urlpath', $url) ) {
+		die "URL already exists in DB ($url)\n";
+		### check newfilename() if this is still an issue
+=cut
+		my $oldfile = $file;
+		$url = substr($mpath,0,5) . $url;
+		$isdup = 1;
+		$file = $self->build_filepath($storage,$url,$filename);
+		if ( -f $file ) {
+			# this is a fatal condition
+			die('Found a duplicate after a found duplicate in DB: ' . $file);
 		}
+		rename ($oldfile, $file) or die($!);
+=cut
+	}
 
+	$self->{dbc}->run(sub {
+		my $dbh = shift;
+		$dbh->do("insert into uploads (mpath, urlpath, processing) values (?,?,1)", undef, $mpath, $url);
+	});
 
-		my $fh;
-		unless (open $fh, $file) {
-			die "process_file: open $file: $!";
-		}
-		
+	my $hash  =  '';
+	my $ftype;
+	try { $ftype = $self->{libmagic}->info_from_filename($file)->{mime_type} };
+	$ftype = 'unknown/unknown' if length($ftype) < 2;
+	$ftype = substr($ftype,0,32);
+
+	# try { utf8::decode($filename) };
+	
+	# enforce "Destroy after download" in case there is match against UPLOAD_FORCE_DESTROYONDL_TYPES / UPLOAD_FORCE_DESTROYONDL_EXTENSIONS
+	if	( (grep { $ftype eq lc $_ } @{$self->{RESTRICTED_FILE_TYPES}}) || (grep { $filename =~ /\.\Q$_\E\s*$/i } @{$self->{RESTRICTED_FILE_EXTENSIONS}}) )
+	{
+		$destroyafterload = 1;
+		$destroyafterload_locked = 1;
+	}
+
+	my $still_processing = $self->{conf}->{UPLOAD_HASH_CALCULATION} ? 1 : 0;
+	my @values = (	$mpath, $url, $storage, $filename, $type, $hash, $ftype, $link, int $shorturl,
+					time, ( $expire == 0 ? 0 : (time+($expire*60)) ), $destroyafterload, $destroyafterload_locked, $isdup, $proto, $size, 0, $still_processing	);
+	
+	$self->{dbc}->run(sub {
+		my $dbh = shift;
+		$dbh->do("replace into uploads values (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0)", undef, @values);
+	});
+
+    say '[info] Upload complete'  if $self->{conf}->{DEBUG} > 0;
+	
+}
+
+sub process_file_hashsum {
+	my $self = shift;
+	#my $urlpath = shift;
+	my $mpath = shift;
+
+	#my $row = $self->db_get_row('uploads', 'urlpath', $urlpath);
+	my $row = $self->db_get_row('uploads', 'mpath', $mpath);
+	
+	my $file = $self->build_filepath( $row->{'storage'},$row->{'urlpath'},$row->{'rpath'} );
+	
+	my $fh;
+	unless (open $fh, $file) {
+		die "process_file_hashsum: open $file: $!";
+	}
+	
+	my $sha = Digest::SHA->new($self->{HASHTYPE});
+	$sha->addfile($fh);
+	my $hash = $sha->hexdigest;
+	close $fh;
+
+	$self->{dbc}->run(sub { $_->do("update uploads set hashsum = ? where mpath = ?", undef, $hash, $row->{'mpath'}) });
+
+	if ( exists $self->{conf}->{UPLOAD_TRACK_DUPLICATES} && $self->{conf}->{UPLOAD_TRACK_DUPLICATES} == 1 )
+	{
+		my $hashexists;
 		$self->{dbc}->run(sub {
-			my $dbh = shift;
-			$dbh->do("insert into uploads (mpath, urlpath, processing) values (?,?,1)", undef, $mpath, $url);
+			$hashexists = $_->selectrow_hashref("SELECT * FROM uploads WHERE hashsum = ? and mpath != ? and type = 'file' and ( expires = 0 or expires > ? ) LIMIT 1", undef, $hash, $row->{'mpath'}, (time + 300));
 		});
+		if ( $hashexists ) {
+			say '[info] Duplicate file exists with the same hash' if $self->{conf}->{DEBUG} > 0;
 
-		my $sha = Digest::SHA->new($self->{HASHTYPE});
-		$sha->addfile($fh);
-		my $hash = $sha->hexdigest;
-		close $fh;
-		
-		my $ftype;
-		try { $ftype = $self->{libmagic}->info_from_filename($file)->{mime_type} };
-		$ftype = 'unknown/unknown' if length($ftype) < 2;
-		$ftype = substr($ftype,0,32);
-		
-		if ( exists $self->{conf}->{UPLOAD_TRACK_DUPLICATES} && $self->{conf}->{UPLOAD_TRACK_DUPLICATES} == 1 )
-		{
-			my $hashexists;
-			$self->{dbc}->run(sub {
-				$hashexists = $_->selectrow_hashref("SELECT * FROM uploads WHERE hashsum = ? and type = 'file' and ( expires = 0 or expires > ? ) LIMIT 1", undef, $hash, (time + 300));
-			});
-			if ( $hashexists ) {
-				say '[info] Duplicate file exists with the same hash' if $self->{conf}->{DEBUG} > 0;
-
-				# only make link if expire time is more than 5 minutes from now or file never expire (0)
-				if ( ($hashexists->{expires} - time) > 300 || $hashexists->{expires} == 0 ) {
-					if ( $ftype eq $hashexists->{ftype} and $size == $hashexists->{size} ) {
-						say '[info] Creating link' if $self->{conf}->{DEBUG} > 0;
-						
-						$link = $self->build_filepath($hashexists->{storage},$hashexists->{urlpath},$hashexists->{rpath});
-						if ( -f $link  ) {
-							$type = 'link';
-							unlink $file;
-						} else {
-							say '[warn] Tried to create a link, but target file does not exist' if $self->{conf}->{DEBUG} > 0;
-							$link = '';
-						}
+			# only make link if expire time is more than 5 minutes from now or file never expire (0)
+			if ( ($hashexists->{expires} - time) > 300 || $hashexists->{expires} == 0 ) {
+				if ( $row->{'ftype'} eq $hashexists->{ftype} and $row->{'size'} == $hashexists->{size} ) {
+					say '[info] Creating link' if $self->{conf}->{DEBUG} > 0;
+					
+					my $link = $self->build_filepath($hashexists->{storage},$hashexists->{urlpath},$hashexists->{rpath});
+					if ( -f $link  ) {
+						unlink $file;
+						$self->{dbc}->run(sub { $_->do("update uploads set type = ?, link = ? where mpath = ?", undef, 'link', $link, $row->{'mpath'}) });
+					} else {
+						say '[warn] Tried to create a link, but target file does not exist' if $self->{conf}->{DEBUG} > 0;
 					}
 				}
 			}
 		}
-		
-		# try { utf8::decode($filename) };
-		
-		my @values = (	$mpath, $url, $storage, $filename, $type, $hash, $ftype, $link, $shorturl,
-						time, ( $expire == 0 ? 0 : (time+($expire*60)) ), $destroyafterload, 0, $isdup, $proto, $size, 0, 0	);
-		
-		$self->{dbc}->run(sub {
-			my $dbh = shift;
-			$dbh->do("replace into uploads values (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0)", undef, @values);
-		});
-
-		return 1;
-		
-	  },
-	  sub {
-	    my ($subprocess, $err, $h) = @_;
-	    do { # fatal
-			say '[fatal] ' . $err; 
-			return 
-			} if $err;
-	    say '[info] Upload complete'  if $self->{conf}->{DEBUG} > 0;
-	  }
-	);
+	}
+	
+	$self->{dbc}->run(sub { $_->do("update uploads set processing = 0 where mpath = ?", undef, $row->{'mpath'}) });
 }
 
 sub build_url {
@@ -553,17 +589,98 @@ sub files_purge_expired {
 }
 
 
-sub files_antivirus_scan {
+sub files_purge_inexistent {
+	# find and wipe database records of files not present on the disk
+	my ($self, $findonly) = @_;
+	my $inexistent = [];
+	my $linkscount = 0;
+
+	my $sth = $self->{dbc}->run(sub {
+	    my $sth = $_->prepare('select mpath, urlpath, storage, rpath from uploads where created < ? and type = "file"');
+	    $sth->execute( (time - 3600) );
+	    $sth;
+	});
+	
+	while (my $row = $sth->fetchrow_hashref) {
+		my $file = $self->build_filepath( $row->{'storage'},$row->{'urlpath'},$row->{'rpath'} );
+
+		if ( ! -f $file ) {
+			say "[info] $file - file not found on disk" if $self->{conf}->{DEBUG} > 0;
+			
+			push @{$inexistent}, $row;
+			
+			$self->{dbc}->run(sub {	$linkscount += int $_->selectrow_array("select count(*) from uploads where type = ? and link = ?", undef, 'link', $file) });
+
+			unless  ($findonly) {
+				$self->{dbc}->run(sub {	$_->do("delete from uploads where mpath = ? or link = ?", undef, $row->{'mpath'}, $file ) });
+			}
+		}
+	}
+	
+	say "[info] found " . ( $findonly ? '' : 'and wiped ' ) . (scalar @{$inexistent}) . " file records and $linkscount link records" if $self->{conf}->{DEBUG} > 0;
+	
+	return $inexistent;
+}
+
+
+sub files_purge_untracked {
+	# purge files not present in the database
+	# those can remain due to hardware/power failures and similar situations when the file isn't properly deleted
 	my ($self) = @_;
 	
+	chdir $self->{conf}->{UPLOAD_STORAGE_PATH} or die "cannot chdir: $!\n";
+	
+	my $dirname = './';
+	opendir my $dh , $dirname or die "Couldn't open dir '$dirname': $!";
+	my @files = readdir $dh;
+	closedir $dh;
+	
+	my $db_found = 0;
+	my $db_notfound = 0;
+	
+	foreach my $filename (@files) 
+	{
+	
+		next if $filename =~ /^\.\.?$/;
+		if ( $filename =~ /^([a-zA-Z]{6,7})\_/ ) {
+			my $urlpath = $1;
+			my $row =  $self->{'dbc'}->dbh->selectrow_hashref("SELECT * FROM uploads WHERE urlpath = ? or link like ?", undef, $urlpath, $self->{conf}->{UPLOAD_STORAGE_PATH} . $urlpath . '_%');
+			if ($row) {
+				$db_found++;
+			} else {
+				try {
+					unlink $filename;
+					# really need some logging event here...
+				} catch {
+					say '[deletion failure] $_';
+				};
+				$db_notfound++;
+			}
+		} else {
+			say 'Weird filename: ' . $filename if $self->{conf}->{DEBUG} > 0;
+		}
+	
+	}
+	
+	#say "Found in the database: $db_found" if $self->{conf}->{DEBUG} > 0;
+	say "Not found in the database and removed: $db_notfound" if $self->{conf}->{DEBUG} > 0;
+}
+
+
+sub files_antivirus_scan {
+	my ($self) = @_;
+
+	my $sqltypelist = '';
+	$sqltypelist = ' and ( ' . join(' or ', map { 'ftype = "' . $_ . '"' } @{$self->{CLAMAV_FILE_TYPES}}) . ' )' if @{$self->{CLAMAV_FILE_TYPES}};
+	
 	my $sth = $self->{dbc}->run(sub {
-	    my $sth = $_->prepare('select mpath,storage,urlpath,rpath from uploads where type = "file" and scanned = 0 and (ftype = "application/x-dosexec" or ftype = "application/x-executable")');
+	    my $sth = $_->prepare('select * from uploads where type = "file" and scanned = 0' . $sqltypelist);
 	    $sth->execute();
 	    $sth;
 	});
 	
-	while (my $row = $sth->fetchrow_hashref) { # 
-		if ( $self->{conf}->{CLAMAV_SCANS_ENABLED} ) {
+	while (my $row = $sth->fetchrow_hashref) {
+
 		 try {
 			my  $filename = $self->build_filepath($row->{'storage'}, $row->{'urlpath'}, $row->{'rpath'});
 			say "[info] $filename - scanning file with clamav" if $self->{conf}->{DEBUG} > 0;
@@ -574,17 +691,22 @@ sub files_antivirus_scan {
 				$self->{dbc}->run(sub {
 						$_->do("update uploads set autodestroy=1,autodestroylocked=1,scanned=1 where mpath = ?", undef, $row->{'mpath'} );
 				});
-				open my $f, '>>', '/tmp/infected_uploads_log';
-				print $f "[info] $filename is infected: $r"; print $f "\n\n";
-				close $f;
+				
+				if ( defined $self->{conf}->{CLAMAV_SCANS_LOG} ) {
+					open my $f, '>>', $self->{conf}->{CLAMAV_SCANS_LOG};
+					print $f "[info] $filename ($row->{'hashsum'} $row->{'ftype'}) is infected: $r"; print $f "\n\n";
+					close $f;
+				}
 			} else {
 				say "[info] $filename is clean" if $self->{conf}->{DEBUG} > 0;
 				$self->{dbc}->run(sub {
 						$_->do("update uploads set scanned=1 where mpath = ?", undef, $row->{'mpath'} );
 				});
 			}
+		 } catch {
+			 say "[error] " . $_;
 		 };
-		}
+
 	}
 }
 

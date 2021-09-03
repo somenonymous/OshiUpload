@@ -1,6 +1,7 @@
 #!/usr/bin/perl
 
 use Mojolicious::Lite;
+use Mojo::IOLoop;
 use GD::SecurityImage;
 use Data::Random qw(:all);
 use Try::Tiny;
@@ -15,12 +16,34 @@ app->config(hypnotoad => { listen => ['http://' . $main->{conf}->{HTTP_APP_ADDRE
 $main->db_init;
 
 my $FILE_MAX_SIZE = ($main->{conf}->{HTTP_UPLOAD_FILE_MAX_SIZE} || 1000) * 1048576;
-my $htmlstuff = {'yes' => 1, 'no' => 0, 'true' => 1, 'false' => 0};
+my $htmlstuff = {'yes' => 1, 'no' => 0, 'true' => 1, 'false' => 0, 'on' => 1, 'off' => 0};
 
 open my $js, '<', 'public/static/bundle.js' or die($!);
 my $minjs = minify(input => $js);
 close $js;
 $minjs =~ s/[\r\n]/ /g;
+
+my @hashqueue;
+my %hashqueue_running;
+my $hashqueue_maxjobs = 1;
+if ( $main->{conf}->{UPLOAD_HASH_CALCULATION} ) {
+	Mojo::IOLoop->recurring(0.1 => sub {
+		my $ioloop = shift;
+		if ( @hashqueue && keys(%hashqueue_running) < $hashqueue_maxjobs) {
+			my $fileid =  shift @hashqueue;
+			$hashqueue_running{$fileid} = '';
+			my $subprocess = $ioloop->subprocess(sub {
+				say 'started process_file_hashsum for ' . $fileid if $main->{conf}->{DEBUG} > 0;
+				$main->process_file_hashsum( $fileid );
+			}, sub {
+				my ($subprocess, $err, @results) = @_;
+				say '[error] ' . $err if $err && $main->{conf}->{DEBUG} > 0;
+				say 'finished process_file_hashsum for ' . $fileid if $main->{conf}->{DEBUG} > 0;
+				delete $hashqueue_running{$fileid};
+			});
+		}
+	});
+}
 
 hook before_dispatch => sub {
     my $c = shift;
@@ -69,14 +92,14 @@ get '/' => sub {
 				$main->delete_file('mpath', $row->{'mpath'});
 				$c->stash(SUCCESS => "The file has been deleted");
 			}elsif ( $c->param('toggleautodestroy') ) {
-				$row->{'autodestroy'} = !$row->{'autodestroy'};
+				$row->{'autodestroy'} = int $row->{'autodestroy'} ? 0 : 1;
 				$main->{dbc}->run(sub {
 					$_->do("update uploads set autodestroy = ? where mpath = ?", undef, $row->{'autodestroy'}, $row->{'mpath'} );
 				});
 				return $c->redirect_to($c->req->url->path->to_abs_string . '?file=' . $row->{'urlpath'});
 
 			}elsif ( $c->param('toggleautodestroylock') ) {
-				$row->{'autodestroylocked'} = !$row->{'autodestroylocked'};
+				$row->{'autodestroylocked'} = int $row->{'autodestroylocked'} ? 0 : 1;
 				$main->{dbc}->run(sub {
 					$_->do("update uploads set autodestroylocked = ? where mpath = ?", undef, $row->{'autodestroylocked'}, $row->{'mpath'} );
 				});
@@ -160,18 +183,14 @@ get '/minified.js' => sub {
 	return $c->render(text => $minjs, format => 'javascript');
 };
 
-get '/nossl' => sub {
-	# just in case someone need to upload/download Firefox in IE on Windows XP
+my $index = sub {
 	my $c = shift;
 	return $c->render(template => 'mainIE') if $c->req->headers->user_agent =~ /MSIE|Trident/;
 	$c->render(template => 'main');
 };
 
-get '/' => sub {
-	my $c = shift;
-	return $c->render(template => 'mainIE') if $c->req->headers->user_agent =~ /MSIE|Trident/;
-	$c->render(template => 'main');
-};
+get $main->{conf}->{HTTP_INSECUREPATH} => $index; # just in case someone need to download Firefox using IE on Windows XP
+get '/' => $index;
 
 get '/sharex' => sub {
 	my $c = shift;
@@ -183,6 +202,12 @@ get '/cmd' => sub {
 	my $c = shift;
 	
 	$c->render(template => 'cmd');
+};
+
+get '/onion' => sub {
+	my $c = shift;
+	
+	$c->render(text => $main->{conf}->{UPLOAD_DOMAIN_ONION});
 };
 
 get '/abuse' => sub {
@@ -271,7 +296,7 @@ get $main->{conf}->{UPLOAD_MANAGE_ROUTE} . ':fileid' => sub {
 				return ($row, ['SUCCESS', "The file has been deleted"]);
 			}elsif ( $c->param('toggleautodestroy') ) {
 				return ($row, ['ERROR', 'This feature was disabled for your file']) if $row->{'autodestroylocked'};
-				$row->{'autodestroy'} = !$row->{'autodestroy'};
+				$row->{'autodestroy'} = int $row->{'autodestroy'} ? 0 : 1;
 				$main->{dbc}->run(sub {
 					my $dbh = shift;
 					$dbh->do("update uploads set autodestroy = ? where mpath = ?", undef, $row->{'autodestroy'}, $mpath );
@@ -345,7 +370,16 @@ hook after_build_tx => sub {
   # Subscribe to "upgrade" event to identify multipart uploads
   $tx->req->content->on(upgrade => sub {
     my ($single, $multi) = @_;
-    return unless $tx->req->url->to_abs->path eq '/' and $tx->req->method eq 'POST';
+    return unless $tx->req->url->to_abs->path =~ /^\/|\/\Q$main->{conf}->{HTTP_INSECUREPATH}\E\/?$/ and $tx->req->method eq 'POST';
+	$tx->req->max_message_size($FILE_MAX_SIZE);
+	if ( $tx->req->headers->content_length > $FILE_MAX_SIZE ) {
+		$tx->req->{content_length_is_over_limit} = 1;
+		$tx->emit('request');
+	}
+  });
+  
+  $tx->req->content->on( body => sub {
+	return unless $tx->req->method eq 'PUT';
 	$tx->req->max_message_size($FILE_MAX_SIZE);
 	if ( $tx->req->headers->content_length > $FILE_MAX_SIZE ) {
 		$tx->req->{content_length_is_over_limit} = 1;
@@ -354,7 +388,109 @@ hook after_build_tx => sub {
   });
 };
 
-post '/' => sub {
+my $putupload = sub {
+	my $c = shift;
+	
+	if (exists $c->req->{content_length_is_over_limit} || $c->req->is_limit_exceeded ) {
+		my $error = "File is too big (max size: " . $main->{conf}->{HTTP_UPLOAD_FILE_MAX_SIZE} . "MB)";
+		return $c->render(text => $error . "\r\n");
+	}
+	
+	my $size = $c->req->content->asset->size;
+	my $options = $c->param('options');
+	my $expire = $c->param('expire');
+	my $autodestroy = $c->param('autodestroy');
+	my $randomizefn = $c->param('randomizefn');
+	my $filename = $c->param('filename');
+	my $shorturl = $c->param('shorturl');
+	$shorturl = ( defined $shorturl ?  $shorturl : 1 );
+	my $name;
+	
+	# adjust parameters for compatibility with old interface request format combinations (http_put.pl)
+	if ( $options eq '' ) {
+		$name = $main->newfilename('random');
+	}
+	elsif ( $options =~ /([^\/]+)\/(\-?\d+)/ ) {
+		$name = $1;
+		my $secondparam = $2;
+		if ( defined $secondparam ) {
+		 if ( $secondparam eq '-1' ) { 
+			 $autodestroy = 1;
+		 } else {
+			$expire = $secondparam;
+			my @ex = $main->expiry_check($secondparam);
+			if ( $ex[0] != 1 ) {
+				$c->render(text => $ex[1] . "\r\n");
+				return;
+			}
+		 }
+		}
+	} else {
+		$name = $options;
+	}
+	
+	$name = $filename if defined $filename;
+	$name = $main->parse_filename($name);
+	
+	my $upstreamfilename = $randomizefn ? $main->newfilename('random', $name) : $name;
+
+	my @ex = $main->expiry_check($expire) if defined $expire;
+	if ( defined $expire && $ex[0] != 1 ) {
+		return $c->render(text => $ex[1] . "\n");
+	}
+	
+	my @fncheck = $main->filename_check($upstreamfilename);
+	return $c->render(text => "Bad filename\n") unless $fncheck[0];
+
+	my $urlpath = $main->newfilename();
+	my $adminpath = $main->newfilename('manage');
+	my $filepath =  $main->build_filepath($main->{conf}->{UPLOAD_STORAGE_PATH}, $urlpath, $upstreamfilename);
+	
+	my $urladdon = $shorturl ? '' :  '/' . $upstreamfilename;
+
+	my $baseurl = $main->{conf}->{'UPLOAD_LINK_USE_HOST'} ? join('://', $c->stash('BASEURLPROTO'), $c->stash('BASEURL')) : undef;
+	my $p1 = $main->build_url(undef, $urlpath . $urladdon, $baseurl);
+	my $p2 = $main->build_url('manage', $adminpath, $baseurl);
+	
+	try { 
+		utf8::decode($p1);
+	};
+
+	$c->req->content->asset->move_to($filepath);
+
+	Mojo::IOLoop->subprocess(
+		sub {
+			my $subprocess = shift;
+			$main->process_file(
+					'http_put',
+					$adminpath,
+					$main->{conf}->{UPLOAD_STORAGE_PATH},
+					$urlpath, 
+					$upstreamfilename, 
+					$size, 
+					$shorturl,
+					$expire,
+					$autodestroy
+				);
+			return 1;
+		},
+		sub {
+			my ($subprocess, $err) = @_;
+			return $c->render(text =>  $err) if $err;
+			
+			push @hashqueue, $adminpath if $main->{conf}->{UPLOAD_HASH_CALCULATION};
+
+			$c->render(text => "\n" . $main->textonly_output($urlpath . $urladdon, $adminpath, $baseurl) . "\n");
+		}
+	);
+
+		
+};
+
+put '/' . $main->{conf}->{HTTP_INSECUREPATH} . '/*options' => {options => ''} => $putupload;
+put '/*options' => {options => ''} => $putupload;
+
+post '/*optional' => [ optional => ['',$main->{conf}->{HTTP_INSECUREPATH}] ] => sub {
 	my $c = shift;
 	$c->stash(ERROR => 0);
 
@@ -409,32 +545,65 @@ post '/' => sub {
 			utf8::decode($p1);
 		};
 
-		push @{$files}, {'url' => $p1, 'manageurl' => $p2, 'name' => $unparsed_name};
+		push @{$files}, 
+		{
+			'url' => $p1, 'manageurl' => $p2, 'name' => $unparsed_name, 
+			'procdelay' => 
+			 [ 
+				'http',
+				$adminpath,
+				$main->{conf}->{UPLOAD_STORAGE_PATH},
+				$urlpath, 
+				$upstreamfilename, 
+				$file->size, 
+				$shorturl,
+				$expire,
+				$autodestroy
+			 ] 
+		};
+						
 		$file->move_to($filepath);
-		$main->process_file(	
-						'http',
-						$adminpath,
-						$main->{conf}->{UPLOAD_STORAGE_PATH},
-						$urlpath, 
-						$upstreamfilename, 
-						$file->size, 
-						$shorturl,
-						$expire,
-						$autodestroy
-					);
+
 	}
+
+	Mojo::IOLoop->subprocess(
+		sub {
+			my $subprocess = shift;
+			foreach my $_file (@{$files}){
+					try { 
+						$main->process_file( @{$_file->{'procdelay'}} ); 
+					} catch {
+						$_file->{'error'} =  $_;
+						say '[error] ' . $_file->{'error'};
+					};
+				}
+			return $files;
+		},
+		sub {
+			my ($subprocess, $err, $files) = @_;
+			return $c->render(text =>  $err) if $err;
+			
+			foreach (@{$files})
+			{ 
+				push (@hashqueue, $_->{'procdelay'}->[1]) if $main->{conf}->{UPLOAD_HASH_CALCULATION}; 
+				delete $_->{'procdelay'}; 
+			} 
+
+			$c->stash(FILES => $files);
+		
+			return $c->render(template => 'uploadcomplete') if $nojs;
+		
+			return $c->render(json => { success => 1, files => $files }) if $c->req->is_xhr;
+
+			return $c->render(text => join("\n", map { join("\n", 'MANAGE: ' . $_->{manageurl}, 'DL: ' . $_->{url}) } @{$files}) . "\n");
+			
+		}
+	);
 	
-	$c->stash(FILES => $files);
 
-	return $c->render(template => 'uploadcomplete') if $nojs;
-
-	return $c->render(json => { success => 1, files => $files }) if $c->req->is_xhr;
-
-	return $c->render(text => join("\n", map { join("\n", 'MANAGE: ' . $_->{manageurl}, 'DL: ' . $_->{url}) } @{$files}) . "\n");
-	
 };
 
-get '/:fileid/*filename' => { filename => undef } => sub {
+my $download = sub {
 	my $c = shift;
 	my $cfilename = $c->param('filename');
 	$cfilename = $main->parse_filename($cfilename) if $cfilename;
@@ -502,12 +671,15 @@ get '/:fileid/*filename' => { filename => undef } => sub {
 			
 			
 
-			if ( $row->{'autodestroy'} ) {
+			if ( $row->{'autodestroy'} && ( !int $row->{'autodestroylocked'}  ||  ( ( $row->{'hits'} + 1 ) >= $main->{RESTRICTED_FILE_HITLIMIT} )   ) ) {
 				$main->delete_file('mpath', $row->{'mpath'});
 				say '[info] File destroyed on download' if $main->{conf}->{DEBUG} > 0;
 			}
 		}
 	);
 };
+
+get '/' . $main->{conf}->{HTTP_INSECUREPATH} . '/:fileid/*filename' => { filename => undef } => $download;
+get '/:fileid/*filename' => { filename => undef } => $download;
 
 app->start;

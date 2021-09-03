@@ -93,6 +93,9 @@
 % } else {
 
 <pre class="mt-3 bg-light">
+% my $STAT_DF = stash 'STAT_DF';
+% my $STAT_FILES = stash 'STAT_FILES';
+% my $STAT_LINKS = stash 'STAT_LINKS';
 <%== $STAT_DF %>
 </pre>
 <p>Files total: <%= $STAT_FILES %></p>

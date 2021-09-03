@@ -14,7 +14,7 @@ require "./functions.pm";
 my %modules = (
 	'engine' => 'hypnotoad -f webapp.pl',
 	'tcp' => 'perl tcp.pl',
-	'put' => 'perl http_put.pl'
+	# 'put' => 'perl http_put.pl' # uncomment to use old standalone server for PUT (curl -T) uploads
 );
 
 my $hypnostop = 'hypnotoad -s webapp.pl && sleep 5';
@@ -88,6 +88,30 @@ Mojo::IOLoop->recurring(30 => sub {
 	);
 });
 
+Mojo::IOLoop->recurring(172800 => sub {
+	my $loop = shift;
+	$loop->subprocess(
+	  sub {
+	    my $subprocess = shift;
+	    $main->files_purge_untracked;
+	    return;
+	  },
+	  sub {}
+	);
+});
+
+Mojo::IOLoop->recurring(604800 => sub {
+	my $loop = shift;
+	$loop->subprocess(
+	  sub {
+	    my $subprocess = shift;
+		$main->files_purge_inexistent();
+	    return;
+	  },
+	  sub {}
+	);
+});
+
 Mojo::IOLoop->recurring(30 => sub {
 	my $loop = shift;
 	$loop->subprocess(
@@ -102,6 +126,7 @@ Mojo::IOLoop->recurring(30 => sub {
 
 Mojo::IOLoop->recurring(600 => sub {
 	my $loop = shift;
+	return unless $main->{conf}->{CLAMAV_SCANS_ENABLED};
 	$loop->subprocess(
 	  sub {
 	    my $subprocess = shift;
@@ -112,13 +137,15 @@ Mojo::IOLoop->recurring(600 => sub {
 	);
 });
 
-system ( $hypnostop );
+if ( $main->{conf}->{MODULES_AUTOSTART} ) {
+ system ( $hypnostop );
 
-try2run();
+ try2run();
 
-Mojo::IOLoop->recurring(10 => sub {
+ Mojo::IOLoop->recurring(10 => sub {
 	try2run();
-});
+ });
+}
 
 sub try2run {
 

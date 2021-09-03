@@ -18,9 +18,9 @@ my $storage_path = $main->{conf}->{UPLOAD_STORAGE_PATH};
 my $admin_route = $main->{conf}->{UPLOAD_MANAGE_ROUTE};
 
 my $PORTS = {
-	'RAW' => { port => $main->{conf}->{TCP_RAW_PORT} || 7777, address => $main->{conf}->{TCP_RAW_ADDRESS} },
-	'BASE64' => { port => $main->{conf}->{TCP_BASE64_PORT} || 7778, address => $main->{conf}->{TCP_BASE64_ADDRESS} },
-	'HEX' => { port => $main->{conf}->{TCP_HEX_PORT} || 7779, address => $main->{conf}->{TCP_HEX_ADDRESS} }
+	'RAW' => { port => $main->{conf}->{TCP_RAW_PORT}, address => $main->{conf}->{TCP_RAW_ADDRESS} },
+	'BASE64' => { port => $main->{conf}->{TCP_BASE64_PORT}, address => $main->{conf}->{TCP_BASE64_ADDRESS} },
+	'HEX' => { port => $main->{conf}->{TCP_HEX_PORT}, address => $main->{conf}->{TCP_HEX_ADDRESS} }
 };
 # no data after connection for n secs
 my $INACTIVE_TIMEOUT_CONNECTION = $main->{conf}->{TCP_INACTIVE_TIMEOUT_CONNECTION} || 4;
@@ -29,9 +29,10 @@ my $INACTIVE_TIMEOUT_UPLOAD = $main->{conf}->{TCP_INACTIVE_TIMEOUT_UPLOAD} || 30
 # in MB, the maximum upload size
 my $FILE_MAX_SIZE = $main->{conf}->{TCP_UPLOAD_FILE_MAX_SIZE} || 150;
 # in MB, the maximum RAM allowed for buffers (refuse new connections when over limit)
-my $MEM_MAX_SIZE = $main->{conf}->{TCP_UPLOAD_MEMORY_MAX_SIZE} || 2000; 
+my $MEM_MAX_SIZE = $main->{conf}->{TCP_UPLOAD_MEMORY_MAX_SIZE} || 1000; 
 
-my $DEBUG = $main->{conf}->{TCP_DEBUG} || 1;
+my $DEBUG = defined $main->{conf}->{TCP_DEBUG} ? int $main->{conf}->{TCP_DEBUG} : 1;
+my $debugpre = '[tcp]';
 
 my $file_max_size_bytes = $FILE_MAX_SIZE * 1048576;
 my $buffers_max_size_bytes = $MEM_MAX_SIZE * 1048576;
@@ -39,15 +40,37 @@ my %ctimers; # dataless connections timers
 my %iorefs; # active upload connections $io references to %uploads
 my %uploads; # active upload connections data
 
- Mojo::IOLoop->recurring(1 => sub {
+my @hashqueue;
+my %hashqueue_running;
+my $hashqueue_maxjobs = 4;
+if ( $main->{conf}->{UPLOAD_HASH_CALCULATION} ) {
+	Mojo::IOLoop->recurring(0.1 => sub {
+		my $ioloop = shift;
+		if ( @hashqueue && keys(%hashqueue_running) < $hashqueue_maxjobs) {
+			my $fileid =  shift @hashqueue;
+			$hashqueue_running{$fileid} = '';
+			my $subprocess = $ioloop->subprocess(sub {
+				say $debugpre . "[info] started process_file_hashsum for " . $fileid if $DEBUG or $main->{conf}->{DEBUG} > 0;
+				$main->process_file_hashsum( $fileid );
+			}, sub {
+				my ($subprocess, $err, @results) = @_;
+				say $debugpre . "[error] $fileid - " . $err if $err && ($DEBUG or $main->{conf}->{DEBUG} > 0);
+				say $debugpre . "[info] finished process_file_hashsum for " . $fileid if $DEBUG or $main->{conf}->{DEBUG} > 0;
+				delete $hashqueue_running{$fileid};
+			});
+		}
+	});
+}
+
+Mojo::IOLoop->recurring(1 => sub {
 	foreach(keys %uploads ) {
 		my $name = $_;
 		if ( $uploads{$name}->{finished} ) {
 			
 			return if $uploads{$name}->{oncopy};
 			
-			say "$name is finished, starting copy" if $DEBUG;
-			say "Length: " . $uploads{$name}->{length} if $DEBUG;
+			say $debugpre . " $name is finished, starting copy" if $DEBUG;
+			say $debugpre . " $name Length: " . $uploads{$name}->{length} if $DEBUG;
 			my $file =  $main->build_filepath($storage_path,$name,$name);
 			Mojo::IOLoop->subprocess(
 			  sub {
@@ -61,10 +84,11 @@ my %uploads; # active upload connections data
 			    return 1;
 			  },
 			  sub {
-			    my ($subprocess, $err, @results) = @_;
-			    say "$name copied to " . $file if $DEBUG;
-					$main->process_file(	
-										'tcp',
+			    my ($subprocess, $err) = @_;
+			    say $debugpre . '[error] ' .  $err if ( $err && $DEBUG );
+			    say $debugpre . " $name copied to " . $file if $DEBUG;
+			    
+			    my @datatobackend = (	'tcp',
 										$uploads{$name}->{mpath},
 										$storage_path,
 										$name, 
@@ -74,11 +98,20 @@ my %uploads; # active upload connections data
 										$uploads{$name}->{expire}
 									);
 									
-					
-						
-						
-						
 				delete $uploads{$name};
+
+			    Mojo::IOLoop->subprocess(
+				 sub {
+				    my $subprocess = shift;
+					$main->process_file( @datatobackend );
+				  },
+				  sub {
+				    my ($subprocess, $err) = @_;
+				    say $debugpre . '[error] ' .  $err if ( $err && $DEBUG );
+					push @hashqueue, $datatobackend[1] if $main->{conf}->{UPLOAD_HASH_CALCULATION};
+				  }
+				);
+
 			  }
 			);
 			
@@ -86,9 +119,9 @@ my %uploads; # active upload connections data
 		}
 		
 	}
- });
+});
 
-Mojo::IOLoop->server({port => $PORTS->{'RAW'}->{port}, address => $PORTS->{'RAW'}->{address}||'127.0.0.1' } => sub {
+Mojo::IOLoop->server({port => $PORTS->{'RAW'}->{port}||7777, address => $PORTS->{'RAW'}->{address}||'127.0.0.1' } => sub {
   my ($loop, $stream) = @_;
 
 	my $io;
@@ -98,7 +131,7 @@ Mojo::IOLoop->server({port => $PORTS->{'RAW'}->{port}, address => $PORTS->{'RAW'
 	tcp_server_process($io, $proginactivity, $inactivity, $stream, 'RAW');
 });
 
-Mojo::IOLoop->server({port => $PORTS->{'BASE64'}->{port}, address => $PORTS->{'BASE64'}->{address}||'127.0.0.1' } => sub {
+Mojo::IOLoop->server({port => $PORTS->{'BASE64'}->{port}||7778, address => $PORTS->{'BASE64'}->{address}||'127.0.0.1' } => sub {
   my ($loop, $stream) = @_;
 
 	my $io;
@@ -108,7 +141,7 @@ Mojo::IOLoop->server({port => $PORTS->{'BASE64'}->{port}, address => $PORTS->{'B
 	tcp_server_process($io, $proginactivity, $inactivity, $stream, 'BASE64');
 });
 
-Mojo::IOLoop->server({port => $PORTS->{'HEX'}->{port}, address => $PORTS->{'HEX'}->{address}||'127.0.0.1' } => sub {
+Mojo::IOLoop->server({port => $PORTS->{'HEX'}->{port}||7779, address => $PORTS->{'HEX'}->{address}||'127.0.0.1' } => sub {
   my ($loop, $stream) = @_;
 
 	my $io;
@@ -125,7 +158,7 @@ sub tcp_server_process {
 	my $fh = shift;
 	my $type = shift;
 	
-	printf ("Client connected (%s)\n", $fh) if $DEBUG;
+	printf ($debugpre . " Client connected (%s)\n", $fh) if $DEBUG;
 
 	my $onbuffers = 0;
 	$onbuffers += $uploads{$_}->{length} foreach keys %uploads;
@@ -157,7 +190,7 @@ sub tcp_server_process {
 	  my $fh = shift;
 				
 			
-			say "$fh closed" if $DEBUG;
+			say "$debugpre $fh closed" if $DEBUG > 1;
 			$uploads{$iorefs{$fh}->{name}}->{finished} = 1 if (exists $iorefs{$fh} and exists $uploads{$iorefs{$fh}->{name}}) ;
 			$fh->close_gracefully; 
 			Mojo::IOLoop->remove($inactivity);
@@ -200,7 +233,7 @@ sub tcp_server_process {
 			my $loop = shift;
 			return unless exists $iorefs{$fh};
 			if ( $iorefs{$fh}->{lastchunk} && (time - $iorefs{$fh}->{lastchunk}) > $INACTIVE_TIMEOUT_UPLOAD ) {
-				say "$fh is inactive" if $DEBUG;
+				say "$debugpre $fh is inactive" if $DEBUG > 1;
 				$uploads{$iorefs{$fh}->{name}}->{finished} = 1;
 					$fh->close_gracefully; 
 				$loop->remove($proginactivity);
@@ -216,5 +249,9 @@ sub make_response {
 	return $main->textonly_output($path,$mpath);
 }
 
+say $debugpre . "[info] TCP upload server started (tcp.pl)" if $DEBUG or $main->{conf}->{DEBUG} > 0;
+foreach (sort { $PORTS->{$a}->{port} <=> $PORTS->{$b}->{port} } keys %{$PORTS}) { 
+	say $debugpre . "[info] Listening on $PORTS->{$_}->{address}:$PORTS->{$_}->{port} ($_)" if $DEBUG or $main->{conf}->{DEBUG} > 0 
+}
 
 Mojo::IOLoop->start;

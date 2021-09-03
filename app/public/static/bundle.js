@@ -927,7 +927,7 @@ window.Zepto = Zepto, "$" in window || (window.$ = Zepto),
             });
             var g = f("", d.humanSize, "total");
             if (g.appendTo(c), d.size > e) return c.addClass("error"), void $(".file-name", g).text("Your filesize exceeds the limit");
-            var h = d.upload("/", {'expire':expire, 'autodestroy':autodestroy, 'randomizefn':randomizefn, 'shorturl':shorturl}),
+            var h = d.upload(( typeof window.location.pathname !== 'undefined' ? window.location.pathname : '/' ), {'expire':expire, 'autodestroy':autodestroy, 'randomizefn':randomizefn, 'shorturl':shorturl}),
                 i = function(a, b) {
                     var c = {};
                     a.forEach(function(d) {
@@ -961,6 +961,9 @@ window.Zepto = Zepto, "$" in window || (window.$ = Zepto),
                             m1.find('a').attr("href", b.manageurl).attr("target", "_BLANK").text('manage'),
                             $(".file-url", a).append(m1);
                             
+                            if(b.error)
+                            this.append('&nbsp;<span class="text-danger"> [ ' + b.error + ' ] </span>');
+
                         }), c.addClass("completed"), j.text("Done!");
                         break;
                     case 413:

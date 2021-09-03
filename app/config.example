@@ -10,6 +10,9 @@ UPLOAD_TIME_DEFAULT = 1440
 # Uploads storage physical path
 UPLOAD_STORAGE_PATH = /mnt/disk1/uploads/
 
+# Uploads file permissions
+UPLOAD_FILE_PERMISSIONS = 0440
+
 # Uploads manage URL path
 UPLOAD_MANAGE_ROUTE = /a/
 
@@ -19,25 +22,32 @@ UPLOAD_TRACK_DUPLICATES = 1
 # Can be one of 1, 224, 256, 384, 512 (each value refers to the SHA* type)
 # Note that if you change this during production, you will need to recreate your database
 UPLOAD_TRACK_DUPLICATES_HASHTYPE = 1
-
+# Enable hashsum calculation of each upload (default is on)
+# Hash type is defined in UPLOAD_TRACK_DUPLICATES_HASHTYPE
+UPLOAD_HASH_CALCULATION = 1
 
 # clearnet domain via CDN
-UPLOAD_DOMAIN_CLEARNET_CDN = oshi.at
-UPLOAD_DOMAIN_CLEARNET_CDN_PROTO = https
+# UPLOAD_DOMAIN_CLEARNET_CDN = oshi.at
+# UPLOAD_DOMAIN_CLEARNET_CDN_PROTO = https
 
 # clearnet domain pointing to direct IP
 UPLOAD_DOMAIN_CLEARNET = oshi.at
 UPLOAD_DOMAIN_CLEARNET_PROTO = https
 
+# Configure what domains to show in text download links info (console uploads)
+# Valid options: ALL, UPLOAD_DOMAIN_CLEARNET, UPLOAD_DOMAIN_CLEARNET_CDN, UPLOAD_DOMAIN_ONION
+# ALL shows all defined options
+UPLOAD_DOMAINS_ENABLED = ALL
+
 # onion domain
 UPLOAD_DOMAIN_ONION = oshiatwowvdbshka.onion
 UPLOAD_DOMAIN_ONION_PROTO = http
 
-# domain for TCP uploads
-UPLOAD_DOMAIN_TCP = oshi.at
+# domain used in documentation for TCP uploads, if omitted, UPLOAD_DOMAIN_MAIN is used
+# UPLOAD_DOMAIN_TCP = oshi.at
 
 # main domain used for admin url and other stuff, can be UPLOAD_DOMAIN_CLEARNET, UPLOAD_DOMAIN_CLEARNET_CDN or UPLOAD_DOMAIN_ONION
-UPLOAD_DOMAIN_MAIN = UPLOAD_DOMAIN_CLEARNET_CDN
+UPLOAD_DOMAIN_MAIN = UPLOAD_DOMAIN_CLEARNET
 
 # Use current server's HTTP_HOST param instead of domains defined in config for giving dl links
 UPLOAD_LINK_USE_HOST = 1
@@ -82,6 +92,10 @@ DB_NAME = uploads
 DB_USER = user1
 DB_PASS = dummypass
 
+# Launch `webapp.pl` and `tcp.pl` from oshi_run.pl
+# Set this option to 0 to launch webapp.pl and tcp.pl manually
+MODULES_AUTOSTART = 1
+
 # General functions debug
 DEBUG = 0
 
@@ -109,6 +123,16 @@ HTTP_PUT_INACTIVE_TIMEOUT_UPLOAD = 30
 
 # HTTP PUT server verbosity level from 0 to 2
 HTTP_PUT_DEBUG = 0
+
+# A path to allow non-encrypted downloads/uploads via HTTP
+# May be extremely useful in rare cases with very old browsers (i.e. download Firefox using IE on Windows XP)
+# It requires specific reverse-proxy configuration to serve this path without SSL/TLS
+# Setting this to a value like 'nossl' will make possible the following non-https requests:
+#	GET http://oshi.at/nossl (main page)
+#	GET http://oshi.at/nossl/somefile (downloads)
+#	POST http://oshi.at/nossl (uploads)
+#	PUT http://oshi.at/nossl/ (uploads)
+HTTP_INSECUREPATH = nossl
 
 #########################################################################
 
@@ -142,7 +166,16 @@ TCP_DEBUG = 0
 
 #########################################################################
 
-# Scan uploaded application/x-dosexec and application/x-executable with clamav
+# Scan uploaded files with clamav that match MIME types listed in CLAMAV_SCANS_TYPES (space-separated)
 # Infected files will be toggled to autodestroy=on and have that toggle locked for a user
 # apt-get install clamav-daemon clamav-freshclam # to install clamav on Ubuntu/Debian
+# Make sure clamd user (usually `clamav`) has access to the group of uploaded files (or modify UPLOAD_FILE_PERMISSIONS)
 CLAMAV_SCANS_ENABLED = 0
+CLAMAV_SCANS_TYPES = application/x-dosexec application/x-executable application/zip
+CLAMAV_SCANS_LOG = /tmp/infected_uploads_log
+
+# Enforce "Destroy after download" option on some file types (multiple mime types separated by space)
+UPLOAD_FORCE_DESTROYONDL_TYPES = application/x-dosexec
+UPLOAD_FORCE_DESTROYONDL_EXTENSIONS = exe apk
+# Allow certain amount of downloads before removing the file affected by UPLOAD_FORCE_DESTROYONDL_* match
+UPLOAD_FORCE_DESTROYONDL_AFTER_HITS = 4
