@@ -10,8 +10,8 @@ require "./functions.pm";
 
 my $main = OshiUpload->new;
 app->config(hypnotoad => { listen => ['http://' . $main->{conf}->{HTTP_APP_ADDRESS}. ':' . $main->{conf}->{HTTP_APP_PORT}],
-						   workers => 8,
-						   pid_file => '/tmp/hypnotoad_oshi.pid'
+						   workers => ( $main->{conf}->{HTTP_APP_WORKERS} || 4 ),
+						   pid_file => ( $main->{conf}->{HTTP_APP_PIDFILE} || '/tmp/hypnotoad_oshi.pid' )
 						  });
 $main->db_init;
 
@@ -31,15 +31,16 @@ if ( $main->{conf}->{UPLOAD_HASH_CALCULATION} ) {
 		my $ioloop = shift;
 		if ( @hashqueue && keys(%hashqueue_running) < $hashqueue_maxjobs) {
 			my $fileid =  shift @hashqueue;
-			$hashqueue_running{$fileid} = '';
+			$hashqueue_running{$fileid->[0]} = '';
+			app->log->info('starting process_file_hashsum for ' . $fileid->[1]) if $main->{conf}->{DEBUG} > 0;
 			my $subprocess = $ioloop->subprocess(sub {
-				say 'started process_file_hashsum for ' . $fileid if $main->{conf}->{DEBUG} > 0;
-				$main->process_file_hashsum( $fileid );
+				$main->process_file_hashsum( $fileid->[0] );
 			}, sub {
 				my ($subprocess, $err, @results) = @_;
-				say '[error] ' . $err if $err && $main->{conf}->{DEBUG} > 0;
-				say 'finished process_file_hashsum for ' . $fileid if $main->{conf}->{DEBUG} > 0;
-				delete $hashqueue_running{$fileid};
+				app->log->error($err) if $err;
+				app->log->info('finished process_file_hashsum for ' . $fileid->[1]) if $main->{conf}->{DEBUG} > 0;
+				delete $hashqueue_running{$fileid->[0]};
+				undef $fileid;
 			});
 		}
 	});
@@ -53,6 +54,11 @@ hook before_dispatch => sub {
 	$vars->{'BASEURL'} = $c->req->url->to_abs->host_port;
 	$vars->{'BASEURLPROTO'} = $downstreamproto;
 	$c->stash($vars);
+};
+
+helper isconsole => sub {
+	my $c = shift;
+	return ( defined $c->req->headers->user_agent and $c->req->headers->user_agent =~ /curl|wget/i ? 1 : 0 );
 };
 
 under $main->{conf}->{ADMIN_ROUTE} => sub {
@@ -186,7 +192,7 @@ get '/minified.js' => sub {
 my $index = sub {
 	my $c = shift;
 	return $c->render(template => 'mainIE') if $c->req->headers->user_agent =~ /MSIE|Trident/;
-	$c->render(template => 'main');
+	$c->render(template => 'main', format => ( $c->isconsole ? 'txt' : 'html' ));
 };
 
 get $main->{conf}->{HTTP_INSECUREPATH} => $index; # just in case someone need to download Firefox using IE on Windows XP
@@ -272,11 +278,16 @@ post '/abuse' => sub {
 
 };
 
-get $main->{conf}->{UPLOAD_MANAGE_ROUTE} . ':fileid' => sub {
+any ['GET', 'DELETE'] => $main->{conf}->{UPLOAD_MANAGE_ROUTE} . ':fileid/*option' => { 'option' => '' } => sub {
 	my $c = shift;
 	my $mpath = $c->param('fileid');
+	my $expire = $c->param('expire');
+	my $optcmd = $c->param('option');
+	my $pdelete = $c->param('delete');
+	my $ptoggleautodestroy = $c->param('toggleautodestroy');
+	my $rmethod = lc $c->req->method;
 	my $rnd = rand_chars ( set => 'alpha', min => 10, max => 15 );
-	
+
 	my $captchasolved = $main->check_captcha($c->param('captcha'), $c->param('captchatoken'));
 
 	Mojo::IOLoop->subprocess(
@@ -289,12 +300,10 @@ get $main->{conf}->{UPLOAD_MANAGE_ROUTE} . ':fileid' => sub {
 			return $row unless $row;
 			return $row if $row->{'processing'};
 			
-			my $expire = $c->param('expire');
-			
-			if ( $c->param('delete') ) {
+			if ( defined $pdelete or lc $optcmd eq 'delete' or $rmethod eq 'delete' ) {
 				$main->delete_file('mpath', $mpath);
 				return ($row, ['SUCCESS', "The file has been deleted"]);
-			}elsif ( $c->param('toggleautodestroy') ) {
+			}elsif ( defined $ptoggleautodestroy ) {
 				return ($row, ['ERROR', 'This feature was disabled for your file']) if $row->{'autodestroylocked'};
 				$row->{'autodestroy'} = int $row->{'autodestroy'} ? 0 : 1;
 				$main->{dbc}->run(sub {
@@ -325,8 +334,8 @@ get $main->{conf}->{UPLOAD_MANAGE_ROUTE} . ':fileid' => sub {
 		},
 		sub {
 			my ($subprocess, $err, $row, $msg) = @_;
-			$c->reply->exception($err) and return if $err;
-			$c->reply->not_found and return unless $row;
+			return $c->reply->exception($err) if $err;
+			return ( $c->isconsole ? $c->render(text => "File not found\n", status => 404) : $c->reply->not_found ) unless $row;
 			
 			return $c->render(text => "File is finishing processing (calculating hashsum), please retry in some seconds") if $row->{'processing'};
 
@@ -339,8 +348,7 @@ get $main->{conf}->{UPLOAD_MANAGE_ROUTE} . ':fileid' => sub {
 			
 			$c->stash( $msg->[0] => $msg->[1] ) if $msg;
 			
-			
-			return $c->render(template => 'manage');
+			return $c->render(template => 'manage', format => ( $c->isconsole ? 'txt' : 'html' ));
 
 		}
 	);
@@ -367,10 +375,12 @@ get '/captcha/:cid' => sub {
 
 hook after_build_tx => sub {
   my $tx = shift;
+  weaken $tx;
   # Subscribe to "upgrade" event to identify multipart uploads
   $tx->req->content->on(upgrade => sub {
     my ($single, $multi) = @_;
     return unless $tx->req->url->to_abs->path =~ /^\/|\/\Q$main->{conf}->{HTTP_INSECUREPATH}\E\/?$/ and $tx->req->method eq 'POST';
+    app->log->info($tx->req->method . ' "' . $tx->req->url->path->to_abs_string . '" (' . ($tx->req->request_id) . ') [POST multipart data init]') if $main->{conf}->{DEBUG} > 0;
 	$tx->req->max_message_size($FILE_MAX_SIZE);
 	if ( $tx->req->headers->content_length > $FILE_MAX_SIZE ) {
 		$tx->req->{content_length_is_over_limit} = 1;
@@ -380,6 +390,7 @@ hook after_build_tx => sub {
   
   $tx->req->content->on( body => sub {
 	return unless $tx->req->method eq 'PUT';
+	app->log->info($tx->req->method . ' "' . $tx->req->url->path->to_abs_string . '" (' . ($tx->req->request_id) . ') [PUT data init]') if $main->{conf}->{DEBUG} > 0;
 	$tx->req->max_message_size($FILE_MAX_SIZE);
 	if ( $tx->req->headers->content_length > $FILE_MAX_SIZE ) {
 		$tx->req->{content_length_is_over_limit} = 1;
@@ -399,11 +410,11 @@ my $putupload = sub {
 	my $size = $c->req->content->asset->size;
 	my $options = $c->param('options');
 	my $expire = $c->param('expire');
-	my $autodestroy = $c->param('autodestroy');
-	my $randomizefn = $c->param('randomizefn');
+	my $autodestroy = $c->param('autodestroy') || 0;
+	my $randomizefn = $c->param('randomizefn') || 0;
 	my $filename = $c->param('filename');
-	my $shorturl = $c->param('shorturl');
-	$shorturl = ( defined $shorturl ?  $shorturl : 1 );
+	my $shorturl = $c->param('shorturl') || 1;
+	#$shorturl = ( defined $shorturl ?  $shorturl : 1 );
 	my $name;
 	
 	# adjust parameters for compatibility with old interface request format combinations (http_put.pl)
@@ -457,6 +468,7 @@ my $putupload = sub {
 	};
 
 	$c->req->content->asset->move_to($filepath);
+	app->log->info('File transfered to "' . $filepath . '" (' . ($c->req->request_id) . ') [PUT]') if $main->{conf}->{DEBUG} > 1;
 
 	Mojo::IOLoop->subprocess(
 		sub {
@@ -477,8 +489,10 @@ my $putupload = sub {
 		sub {
 			my ($subprocess, $err) = @_;
 			return $c->render(text =>  $err) if $err;
-			
-			push @hashqueue, $adminpath if $main->{conf}->{UPLOAD_HASH_CALCULATION};
+
+			app->log->info('Upload complete (' . ($c->req->request_id) . ') [PUT]') if $main->{conf}->{DEBUG} > 0;
+
+			push @hashqueue, [$adminpath, $c->req->request_id] if $main->{conf}->{UPLOAD_HASH_CALCULATION};
 
 			$c->render(text => "\n" . $main->textonly_output($urlpath . $urladdon, $adminpath, $baseurl) . "\n");
 		}
@@ -487,17 +501,14 @@ my $putupload = sub {
 		
 };
 
-put '/' . $main->{conf}->{HTTP_INSECUREPATH} . '/*options' => {options => ''} => $putupload;
-put '/*options' => {options => ''} => $putupload;
-
-post '/*optional' => [ optional => ['',$main->{conf}->{HTTP_INSECUREPATH}] ] => sub {
+my $postupload = sub {
 	my $c = shift;
 	$c->stash(ERROR => 0);
 
 	my $expire = $c->param('expire');
-	my $autodestroy = $c->param('autodestroy');
-	my $randomizefn = $c->param('randomizefn');
-	my $shorturl = $c->param('shorturl');
+	my $autodestroy = $c->param('autodestroy') || 0;
+	my $randomizefn = $c->param('randomizefn') || 0;
+	my $shorturl = $c->param('shorturl') || 0;
 	my $nojs = $c->param('nojs');
 
 	if (exists $c->req->{content_length_is_over_limit} || $c->req->is_limit_exceeded ) {
@@ -515,7 +526,7 @@ post '/*optional' => [ optional => ['',$main->{conf}->{HTTP_INSECUREPATH}] ] => 
 		return $c->render( template => 'main', ERROR => $ex[1] ) if $nojs;
 		return $c->render( text => $ex[1]. "\n");
 	}
-	
+
 	$autodestroy = $htmlstuff->{$autodestroy} if exists $htmlstuff->{$autodestroy};
 	$randomizefn = $htmlstuff->{$randomizefn} if exists $htmlstuff->{$randomizefn};
 	$shorturl = $htmlstuff->{$shorturl} if exists $htmlstuff->{$shorturl};
@@ -535,7 +546,7 @@ post '/*optional' => [ optional => ['',$main->{conf}->{HTTP_INSECUREPATH}] ] => 
 		my $adminpath = $main->newfilename('manage');
 		my $filepath =  $main->build_filepath($main->{conf}->{UPLOAD_STORAGE_PATH}, $urlpath, $upstreamfilename);
 		
-		my $urladdon = $shorturl == 0 ? '/' . $upstreamfilename : '';
+		my $urladdon = ( defined $shorturl && $shorturl == 0 ) ? '/' . $upstreamfilename : '';
 
 		my $baseurl = $main->{conf}->{'UPLOAD_LINK_USE_HOST'} ? join('://', $c->stash('BASEURLPROTO'), $c->stash('BASEURL')) : undef;
 		my $p1 = $main->build_url(undef, $urlpath . $urladdon, $baseurl);
@@ -563,6 +574,7 @@ post '/*optional' => [ optional => ['',$main->{conf}->{HTTP_INSECUREPATH}] ] => 
 		};
 						
 		$file->move_to($filepath);
+		app->log->info('File transfered to "' . $filepath . '" (' . ($c->req->request_id) . ') [POST]') if $main->{conf}->{DEBUG} > 1;
 
 	}
 
@@ -574,7 +586,6 @@ post '/*optional' => [ optional => ['',$main->{conf}->{HTTP_INSECUREPATH}] ] => 
 						$main->process_file( @{$_file->{'procdelay'}} ); 
 					} catch {
 						$_file->{'error'} =  $_;
-						say '[error] ' . $_file->{'error'};
 					};
 				}
 			return $files;
@@ -585,7 +596,9 @@ post '/*optional' => [ optional => ['',$main->{conf}->{HTTP_INSECUREPATH}] ] => 
 			
 			foreach (@{$files})
 			{ 
-				push (@hashqueue, $_->{'procdelay'}->[1]) if $main->{conf}->{UPLOAD_HASH_CALCULATION}; 
+				app->log->error($_->{'error'}) if exists $_->{'error'};
+				app->log->info('Upload complete (' . ($c->req->request_id) . ') [POST]') if $main->{conf}->{DEBUG} > 0;
+				push (@hashqueue, [$_->{'procdelay'}->[1], $c->req->request_id]) if $main->{conf}->{UPLOAD_HASH_CALCULATION}; 
 				delete $_->{'procdelay'}; 
 			} 
 
@@ -605,21 +618,29 @@ post '/*optional' => [ optional => ['',$main->{conf}->{HTTP_INSECUREPATH}] ] => 
 
 my $download = sub {
 	my $c = shift;
+	my $urlpath = $c->param('fileid');
 	my $cfilename = $c->param('filename');
 	$cfilename = $main->parse_filename($cfilename) if $cfilename;
+
+	my $hashsumreq = $c->req->url->path->to_string =~ /^\/hashsum/ ? 1 : 0;
+
+	my $urlpathext;
+	if ($urlpath =~ /^([a-zA-Z0-9]+)(\.[a-z0-9]+)$/) {
+		$urlpath = $1;
+		$urlpathext = $2
+	}
 
 	Mojo::IOLoop->subprocess(
 		sub {
 			my $subprocess = shift;
 
-			my $urlpath = $c->param('fileid');
 			$urlpath =~ s/[^a-zA-Z0-9]//g;
 			my $row = $main->db_get_row('uploads', 'urlpath', $urlpath);
 
 			$main->{dbc}->run(sub {
 				my $dbh = shift;
 				$dbh->do("update uploads set hits = hits + 1 where urlpath = ?", undef, $urlpath );
-			}); 
+			}) if $row && ( $row->{'shorturl'} == 1 || ($row->{'shorturl'} == 0 and (defined $cfilename && $cfilename eq $row->{'rpath'})) ) && !$hashsumreq; 
 
 			#try { utf8::encode($row->{'rpath'}) };
 
@@ -627,45 +648,38 @@ my $download = sub {
 		},
 		sub {
 			my ($subprocess, $err, $row) = @_;
-			$c->reply->exception($err) and return if $err;
-			$c->reply->not_found and return unless $row;
-			$c->reply->not_found and return if ( $row->{'shorturl'} == 0 and $cfilename ne $row->{'rpath'} );
+			return $c->reply->exception($err) if $err;
+			return ( $c->isconsole ? $c->render(text => "File not found\n", status => 404) : $c->reply->not_found ) unless $row;
+			return  ( $c->isconsole ? $c->render(text => "File not found\n", status => 404) : $c->reply->not_found ) if ( $row->{'shorturl'} == 0 and ( not defined $cfilename or $cfilename ne $row->{'rpath'} ) );
 
 			return $c->render(text => "File is finishing processing (calculating hashsum), please retry in some seconds") if $row->{'processing'};
+			return $c->render(text => $row->{'hashsum'} . " (SHA" . $main->{HASHTYPE} . ")\n") if $hashsumreq;
 			
 			my $file = $row->{'type'} eq 'link' ? $row->{'link'} : $main->build_filepath( $row->{'storage'},$row->{'urlpath'},$row->{'rpath'} );
 			
 			return $c->render(text => "File not available right now (perhaps storage unmounted?)") unless -f $file;
 			my $dlfilename = $cfilename || $row->{'rpath'};
 
-
-			if ( $row->{'size'} < $main->{conf}->{CONTENT_VIEW_UNTIL_SIZE} and $row->{'ftype'} =~ /^(image\/|text\/|video\/|application\/pdf)/) {
-
-				if ( $row->{'ftype'} =~ /^image\// ) {
-					if ( !$cfilename ) {
-						return $c->redirect_to(join('/',$row->{'urlpath'}, $dlfilename));
-					} else {
-						$c->res->headers->content_type( $row->{'ftype'} );
+			my $inlineview = 0;
+			
+			foreach my $mimetype ( keys %{$main->{MIMETYPE_SIZE_LIMITS}} ) {
+				if ( $row->{'ftype'} =~ /^\Q$mimetype\E/ && $row->{'size'} <= $main->{MIMETYPE_SIZE_LIMITS}->{$mimetype} ) {
+					$inlineview = 1;
+					if ( $row->{'ftype'} =~ /^(image\/|video\/|audio\/)/ ) {
+						unless ( $cfilename || $urlpathext ) {
+							return $c->redirect_to(join('/',$row->{'urlpath'}, $dlfilename));
+						} else {
+							$c->res->headers->content_type( $row->{'ftype'} );
+						}
+					} elsif ( $row->{'ftype'} =~ /^text\// ) {
+						$c->res->headers->content_type( 'text/plain; charset=utf-8');
+					}elsif ( $row->{'ftype'} =~ /^application\/pdf/ ) {
+						$c->res->headers->content_disposition("inline; filename=$dlfilename");
 					}
-				} elsif ( $row->{'ftype'} =~ /^text\// ) {
-					$c->res->headers->content_type( 'text/plain; charset=utf-8');
-				}elsif ( $row->{'ftype'} =~ /^application\/pdf/ ) {
-					$c->res->headers->content_disposition("inline; filename=$dlfilename");
 				}
-				
-			} elsif ( $row->{'size'} < $main->{conf}->{CONTENT_VIEW_VIDEO_AUDIO_UNTIL_SIZE} and $row->{'ftype'} =~ /^(video\/|audio\/|)/) {
-
-					if ( !$cfilename ) {
-						return $c->redirect_to(join('/',$row->{'urlpath'}, $dlfilename));
-					} else {
-						$c->res->headers->content_type( $row->{'ftype'} );
-					}
-
-			} else {
-				
-				$c->res->headers->content_disposition("attachment; filename=$dlfilename");
-				
 			}
+			
+			$c->res->headers->content_disposition("attachment; filename=$dlfilename") unless $inlineview;
 			
 			$c->reply->asset(Mojo::Asset::File->new(path => $file));
 			
@@ -673,13 +687,20 @@ my $download = sub {
 
 			if ( $row->{'autodestroy'} && ( !int $row->{'autodestroylocked'}  ||  ( ( $row->{'hits'} + 1 ) >= $main->{RESTRICTED_FILE_HITLIMIT} )   ) ) {
 				$main->delete_file('mpath', $row->{'mpath'});
-				say '[info] File destroyed on download' if $main->{conf}->{DEBUG} > 0;
+				app->log->info('File destroyed on download') if $main->{conf}->{DEBUG} > 0;
 			}
 		}
 	);
 };
 
-get '/' . $main->{conf}->{HTTP_INSECUREPATH} . '/:fileid/*filename' => { filename => undef } => $download;
-get '/:fileid/*filename' => { filename => undef } => $download;
+put '/' . $main->{conf}->{HTTP_INSECUREPATH} . '/*options' => {options => ''} => $putupload;
+put '/*options' => {options => ''} => $putupload;
+
+post  '/' . $main->{conf}->{HTTP_INSECUREPATH} => $postupload;
+post '/' => $postupload;
+
+get '/hashsum/#fileid/*filename' => { filename => undef } => $download;
+get '/' . $main->{conf}->{HTTP_INSECUREPATH} . '/#fileid/*filename' => { filename => undef } => $download;
+get '/#fileid/*filename' => { filename => undef } => $download;
 
 app->start;

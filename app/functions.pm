@@ -12,6 +12,8 @@ use Time::HiRes;
 use DBIx::Connector;
 use Try::Tiny;
 use Scalar::Util qw/looks_like_number/;
+use Mojo::JSON qw(decode_json encode_json);
+use Mojo::URL;
 
 sub new {
  my($class, %o) = @_;
@@ -60,6 +62,7 @@ sub template_vars {
 		USE_HTTP_HOST => $self->{conf}->{UPLOAD_LINK_USE_HOST},
 		INSECUREPATH => $self->{conf}->{HTTP_INSECUREPATH},
 		ABUSE_CAPTCHA_REQUIRED => $self->{conf}->{CAPTCHA_SHOW_FOR_ABUSE},
+		HASHSUMS_ENABLED => $self->{conf}->{UPLOAD_HASH_CALCULATION}
 	};
 
 	return $g;
@@ -68,31 +71,32 @@ sub template_vars {
 sub textonly_output {
 	my ($self, $path, $mpath, $customhost) = @_;
 
-	my $str = ( defined $customhost ? $customhost : $self->{MAIN_DOMAIN_PROTO} . '://' .  
-			  $self->{MAIN_DOMAIN} ) . 
-			  $self->{conf}->{UPLOAD_MANAGE_ROUTE} . $mpath . " [Admin]\r\n";
-			  
-	$str .= ( defined $customhost ? $customhost : $self->{MAIN_DOMAIN_PROTO} . '://' .  $self->{MAIN_DOMAIN} ) . '/' . $path . " [Download]\r\n";
+	my $currenturl = defined $customhost ? $customhost : $self->{MAIN_DOMAIN_PROTO} . '://' .  $self->{MAIN_DOMAIN};
+	my $currenthost = Mojo::URL->new($currenturl)->host_port;
 
+	my $str = $currenturl . $self->{conf}->{UPLOAD_MANAGE_ROUTE} . $mpath . " [Admin]\r\n";
+			  
+	$str .= $currenturl . '/' . $path . " [Download]\r\n";
+	
 	if ( $self->{conf}->{UPLOAD_DOMAINS_ENABLED} eq 'ALL' or $self->{conf}->{UPLOAD_DOMAINS_ENABLED} eq 'UPLOAD_DOMAIN_CLEARNET_CDN' )
 	{
 		$str .= $self->{conf}->{'UPLOAD_DOMAIN_CLEARNET_CDN_PROTO'} . '://' . 
 			$self->{conf}->{'UPLOAD_DOMAIN_CLEARNET_CDN'} . '/' . $path . " [CDN download]\r\n"
-			if exists $self->{conf}->{UPLOAD_DOMAIN_CLEARNET_CDN} and $self->{conf}->{UPLOAD_DOMAIN_CLEARNET_CDN} ne $self->{MAIN_DOMAIN};
+			if exists $self->{conf}->{UPLOAD_DOMAIN_CLEARNET_CDN} and $self->{conf}->{UPLOAD_DOMAIN_CLEARNET_CDN} ne $currenthost
 	}
 
 	if ( $self->{conf}->{UPLOAD_DOMAINS_ENABLED} eq 'ALL' or $self->{conf}->{UPLOAD_DOMAINS_ENABLED} eq 'UPLOAD_DOMAIN_CLEARNET' )
 	{
 		$str .= $self->{conf}->{'UPLOAD_DOMAIN_CLEARNET_PROTO'} . '://' . 
 			$self->{conf}->{'UPLOAD_DOMAIN_CLEARNET'} . '/' . $path . " [Direct IP download]\r\n"
-			if exists $self->{conf}->{UPLOAD_DOMAIN_CLEARNET} and $self->{conf}->{UPLOAD_DOMAIN_CLEARNET} ne $self->{MAIN_DOMAIN};
+			if exists $self->{conf}->{UPLOAD_DOMAIN_CLEARNET} and $self->{conf}->{UPLOAD_DOMAIN_CLEARNET} ne $currenthost
 	}
 
 	if ( $self->{conf}->{UPLOAD_DOMAINS_ENABLED} eq 'ALL' or $self->{conf}->{UPLOAD_DOMAINS_ENABLED} eq 'UPLOAD_DOMAIN_ONION' )
 	{
 		$str .= $self->{conf}->{'UPLOAD_DOMAIN_ONION_PROTO'} . '://' . 
 			$self->{conf}->{'UPLOAD_DOMAIN_ONION'} . '/' . $path . " [Tor download]\r\n"
-			if exists $self->{conf}->{UPLOAD_DOMAIN_ONION} and $self->{conf}->{UPLOAD_DOMAIN_ONION} ne $self->{MAIN_DOMAIN};
+			if exists $self->{conf}->{UPLOAD_DOMAIN_ONION} and $self->{conf}->{UPLOAD_DOMAIN_ONION} ne $currenthost
 	}
 	
 	return $str;
@@ -126,7 +130,17 @@ sub checkups {
 	$self->{conf}->{TCP_RAW_PORT} = 7777 unless exists $self->{conf}->{TCP_RAW_PORT};
 	$self->{conf}->{TCP_BASE64_PORT} = 7778 unless exists $self->{conf}->{TCP_BASE64_PORT};
 	$self->{conf}->{TCP_HEX_PORT} = 7779 unless exists $self->{conf}->{TCP_HEX_PORT};
+	
+	$self->{MIMETYPE_SIZE_LIMITS} = {};
+	
+	try {
+		$self->{MIMETYPE_SIZE_LIMITS} =  decode_json $self->{conf}->{CONTENT_VIEW_UNTIL_SIZE};
+	} catch {
+		say '[error] decoding JSON from CONTENT_VIEW_UNTIL_SIZE failed: ' . $_;
+		say 'The format description can be found in config.example';
+	};
 
+	$self->{SHORTURLMINLEN} = exists $self->{conf}->{SHORTURL_LENGTH}?int $self->{conf}->{SHORTURL_LENGTH}:5;
 	$self->{SHORTURLMAXLEN} = 16;
 	$self->{FNMAXLEN} = exists $self->{conf}->{UPLOAD_FILENAME_MAX_LENGTH}?$self->{conf}->{UPLOAD_FILENAME_MAX_LENGTH}:100;
 	$self->{FNMAXLEN} -= $self->{SHORTURLMAXLEN}; 
@@ -155,13 +169,13 @@ sub newfilename {
 		return rand_chars ( set => 'alpha', min => 4, max => 4 ) . $ext;
 	}
 	
-	my $randomname = $self->{ShortURL}->randpattern("XXXXXX");
+	my $randomname = $self->{ShortURL}->randpattern("X" x $self->{SHORTURLMINLEN});
 	
 	my $try = 0;
 	while ( $try < 5) {
 		$try++;
 		if ( $self->db_get_row('uploads', 'urlpath', $randomname) ) {
-			say '[info] Duplicate generated, adding random char' . "($randomname)" if $self->{conf}->{DEBUG} > 0;
+			say '[info] Duplicate generated, adding random char to "' . $randomname . '"' if $self->{conf}->{DEBUG} > 0;
 			$randomname .= $self->{ShortURL}->randpattern("X");
 		} else { $try = 5 }
 	}
@@ -241,7 +255,7 @@ sub process_file {
 		$dbh->do("replace into uploads values (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0)", undef, @values);
 	});
 
-    say '[info] Upload complete'  if $self->{conf}->{DEBUG} > 0;
+    say "[info] process_file() finished ($mpath)" if $self->{conf}->{DEBUG} > 1;
 	
 }
 
@@ -253,13 +267,18 @@ sub process_file_hashsum {
 	#my $row = $self->db_get_row('uploads', 'urlpath', $urlpath);
 	my $row = $self->db_get_row('uploads', 'mpath', $mpath);
 	
+	die "process_file_hashsum: record not found for $mpath" unless $row;
+	die "process_file_hashsum: already processed ($mpath)" if !$row->{'processing'};
+	
 	my $file = $self->build_filepath( $row->{'storage'},$row->{'urlpath'},$row->{'rpath'} );
 	
 	my $fh;
 	unless (open $fh, $file) {
 		die "process_file_hashsum: open $file: $!";
 	}
-	
+
+	$self->{dbc}->run(sub { $_->do("update uploads set processing = 2 where mpath = ?", undef, $row->{'mpath'}) });
+
 	my $sha = Digest::SHA->new($self->{HASHTYPE});
 	$sha->addfile($fh);
 	my $hash = $sha->hexdigest;
@@ -274,19 +293,19 @@ sub process_file_hashsum {
 			$hashexists = $_->selectrow_hashref("SELECT * FROM uploads WHERE hashsum = ? and mpath != ? and type = 'file' and ( expires = 0 or expires > ? ) LIMIT 1", undef, $hash, $row->{'mpath'}, (time + 300));
 		});
 		if ( $hashexists ) {
-			say '[info] Duplicate file exists with the same hash' if $self->{conf}->{DEBUG} > 0;
+			say '[info] Duplicate file exists with the same hash (' . $row->{'mpath'} . ')' if $self->{conf}->{DEBUG} > 1;
 
 			# only make link if expire time is more than 5 minutes from now or file never expire (0)
 			if ( ($hashexists->{expires} - time) > 300 || $hashexists->{expires} == 0 ) {
 				if ( $row->{'ftype'} eq $hashexists->{ftype} and $row->{'size'} == $hashexists->{size} ) {
-					say '[info] Creating link' if $self->{conf}->{DEBUG} > 0;
+					say '[info] Creating link (' . $row->{'mpath'} . ')' if $self->{conf}->{DEBUG} > 1;
 					
 					my $link = $self->build_filepath($hashexists->{storage},$hashexists->{urlpath},$hashexists->{rpath});
 					if ( -f $link  ) {
 						unlink $file;
 						$self->{dbc}->run(sub { $_->do("update uploads set type = ?, link = ? where mpath = ?", undef, 'link', $link, $row->{'mpath'}) });
 					} else {
-						say '[warn] Tried to create a link, but target file does not exist' if $self->{conf}->{DEBUG} > 0;
+						say '[warn] Tried to create a link, but target file "' . $file . '" does not exist (' . $row->{'mpath'} . ')' if $self->{conf}->{DEBUG} > 0;
 					}
 				}
 			}
@@ -294,6 +313,24 @@ sub process_file_hashsum {
 	}
 	
 	$self->{dbc}->run(sub { $_->do("update uploads set processing = 0 where mpath = ?", undef, $row->{'mpath'}) });
+}
+
+sub process_unfinished_hashsum {
+	# process unfinished hashsum calculations, usually due to unstarted process_file_hashsum() because of periodic graceful restarts in Mojo::Server::Prefork (->accepts)
+	# run only when no other process_file_hashsum() are working to not overlap with queues
+	my $self = shift;
+
+	my $mpath = $self->{dbc}->dbh->selectrow_array('select mpath from uploads where processing = 1 and created < ? and type = "file" order by created limit 1', undef, (time - 60));
+	
+	return unless $mpath;
+
+	my $running = $self->{dbc}->dbh->selectrow_array('select count(*) from uploads where processing = 2');
+	# say 'Running process_file_hashsum(): ' . $running;
+	die "process_unfinished_hashsum: other calculations ongoing" if $running;
+	
+	say('[info] started process_unfinished_hashsum for ' . $mpath) if $self->{conf}->{DEBUG} > 0;
+	$self->process_file_hashsum($mpath);
+	say('[info] finished process_unfinished_hashsum for ' . $mpath) if $self->{conf}->{DEBUG} > 0;
 }
 
 sub build_url {
@@ -499,7 +536,7 @@ sub db_struct {
 	$self->{db_structure} = {
 
         'uploads' => 'mpath varchar(64), 
-					  urlpath varchar(' . $shorturlmaxlen . '),
+					  urlpath varchar(' . $shorturlmaxlen . ') ' . ($t eq'mysql'?'binary':'') . ',
 					  storage varchar(' . $storagemaxlen . '),
 					  rpath varchar('. $self->{FNMAXLEN} .'),
 					  type varchar(8), hashsum varchar(' . $hashsumlength . '), 
@@ -574,17 +611,20 @@ sub captcha_purge_expired {
 
 
 sub files_purge_expired {
-	my ($self) = @_;
+	my ($self, $limit) = @_;
+	
+	my $limitsql = '';
+	$limitsql = "limit $limit" if $limit;
 	
 	my $sth = $self->{dbc}->run(sub {
-	    my $sth = $_->prepare('select mpath from uploads where expires > 0 and expires < ?');
+	    my $sth = $_->prepare('select mpath from uploads where expires > 0 and expires < ? ' . $limitsql);
 	    $sth->execute(time);
 	    $sth;
 	});
 	
 	while (my $data = $sth->fetchrow_array) {
-		say "[info] $data - file deleted" if $self->{conf}->{DEBUG} > 0;
 		$self->delete_file('mpath', $data, 'fg');
+		say "[info] $data - file deleted" if $self->{conf}->{DEBUG} > 0;
 	}
 }
 
@@ -642,7 +682,7 @@ sub files_purge_untracked {
 	{
 	
 		next if $filename =~ /^\.\.?$/;
-		if ( $filename =~ /^([a-zA-Z]{6,7})\_/ ) {
+		if ( $filename =~ /^([a-zA-Z]+)\_/ ) {
 			my $urlpath = $1;
 			my $row =  $self->{'dbc'}->dbh->selectrow_hashref("SELECT * FROM uploads WHERE urlpath = ? or link like ?", undef, $urlpath, $self->{conf}->{UPLOAD_STORAGE_PATH} . $urlpath . '_%');
 			if ($row) {
@@ -745,7 +785,19 @@ sub db_check_tables {
 	foreach my $table (keys %{$self->{db_tables}})
 	{
 		try {
-			$dbh->do("select 1 from $table limit 1") 
+			$dbh->do("select 1 from $table limit 1");
+			#alter table uploads change urlpath urlpath varchar(16) binary;
+
+			if ( $table eq 'uploads' and lc $self->{conf}->{DB_TYPE} eq 'mysql' ) {
+				my $urlpath_needfix = $dbh->selectrow_array('select collation_name from information_schema.columns where table_name = ? and column_name = ?', undef, 'uploads', 'urlpath');
+				unless ($urlpath_needfix =~ /_bin$/) {
+					my $shorturlmaxlen = $self->{SHORTURLMAXLEN} || 16 ;
+					$dbh->do("alter table uploads change urlpath urlpath varchar(" . $shorturlmaxlen . ") binary");
+					my $urlpath_isfixed = $dbh->selectrow_array('select collation_name from information_schema.columns where table_name = ? and column_name = ?', undef, 'uploads', 'urlpath');
+					say "[info] changed collation of `urlpath` column from $urlpath_needfix to $urlpath_isfixed";
+				}
+			}
+
 		}
 		catch 
 		{

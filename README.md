@@ -1,7 +1,7 @@
 OshiUpload is a powerful anonymous public file sharing FLOSS, its advantages are:
 
 * Respects users privacy - no logs are collected
-* Command-line uploads via PUT method (curl -T)
+* Full command-line interaction and uploads via PUT method (curl -T)
 * TCP uploads via netcat and telnet
 * Manage interface for each upload
 * Optional instant destruction after download
@@ -10,13 +10,11 @@ OshiUpload is a powerful anonymous public file sharing FLOSS, its advantages are
 * Easy template along with a _very stylish no-JavaScript_ version included
 * Duplicate files detection using SHA* sums
 
-This is a synced source code we are currently running at [oshi.at](https://oshi.at)
+This is a synced source code currently running at [oshi.at](https://oshi.at)
 
-The interface design is influenced by mixtape.moe and transfer.sh
+Its admin interface only provides general stats, abuse reports and a file finder by URL. Unlike all popular file sharing platforms, it doesn't provide a possibility of live tracking/viewing uploaded files in order to avoid attracting unnecessary enthusiasm. 
 
-Our admin interface only provides general stats, abuse reports and a file finder by URL. Unlike all popular file sharing platforms, it doesn't provide a possibility of live tracking/viewing uploaded files in order to avoid attracting unnecessary enthusiasm (self-restriction is good). 
-
-The duplicate files detection feature allows to create links to existing files in case the uploaded file already exists on the storage, this helps to save a lot of space. This feature is awesome and it's the main reason why we store hash sums. We compare file size, mimetype and hashsum prior to creating link to ensure absence of collisions. In case the origin file is about to expire or get deleted but it has links, one of the links becomes a new origin (one with a longest retention period).
+The duplicate files detection feature allows to create links to existing files in case the uploaded file already exists on the storage, this helps to save a lot of space. It compares file size, mimetype and hashsum prior to creating link to ensure absence of collisions. In case the origin file is about to expire or get deleted but it has links, one of the links becomes a new origin (one with a longest retention period).
 
 # Installing & Running
 
@@ -57,4 +55,10 @@ If you want to install modules as non-root, substitute `cpan` with `cpanm` from 
 
 or just add tools/cron.sh to _/etc/crontab_ so the engine will autorun:
 
-`* * * * *	nobody	/full/path/to/OshiUpload/tools/cron.sh > /dev/null 2>&1`
+`* * * * *	user	/full/path/to/OshiUpload/tools/cron.sh > /dev/null 2>&1`
+
+### Reverse-proxy and database configuration
+
+There are no special requirements for a reverse-proxy configuration and any software with their default configuration will work. Make sure `HTTP_UPLOAD_FILE_MAX_SIZE` value corresponds body size limit of the reverse-proxy. Older versions required forwarding PUT requests to a separate backend (`http_put.pl`) which isn't a requirement in recent commits, because this method was integrated into the main application.
+
+For MySQL/MariaDB it's recommended to set `max_connections` at least to a double of the default value or higher, depending on hardware parameters.

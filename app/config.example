@@ -61,11 +61,12 @@ CAPTCHA_TOKEN_EXPIRE_TIME = 300
 # require captcha for abuse reports
 CAPTCHA_SHOW_FOR_ABUSE = 0
 
-# Show content instead of push download when the size it less than this value in bytes
-CONTENT_VIEW_UNTIL_SIZE = 2000000
+# Show content instead of forcing download when the size it less than indicated value in bytes
+# Format is json with keys representing MIME types with or without subtypes. In case subtype isn't specified, any subtype will match.
+CONTENT_VIEW_UNTIL_SIZE = { "text" : 5000000, "image" : 10000000, "application/pdf" : 10000000, "audio" : 50000000, "video" : 50000000 }
 
-# Increment to CONTENT_VIEW_UNTIL_SIZE if contens is video/audio (webm and stuff)
-CONTENT_VIEW_VIDEO_AUDIO_UNTIL_SIZE = 25000000
+# Short URL minimal length
+SHORTURL_LENGTH = 4
 
 #########################################################################
 
@@ -105,24 +106,28 @@ DEBUG = 0
 # HTTP upload max file size in megabytes
 HTTP_UPLOAD_FILE_MAX_SIZE = 1000
 
-
 # HTTP main app & POST uploads listen address and port, * for listening on all interfaces
 HTTP_APP_ADDRESS = *
 HTTP_APP_PORT = 4019
 
+# HTTP app workers to prefork
+HTTP_APP_WORKERS = 4
+
+# HTTP app pid file
+#HTTP_APP_PIDFILE = /tmp/hypnotoad_oshi.pid
 
 # HTTP PUT uploads listen address and port
-HTTP_PUT_ADDRESS = ::
-HTTP_PUT_PORT = 4020
+#HTTP_PUT_ADDRESS = ::
+#HTTP_PUT_PORT = 4020
 
 # HTTP PUT uploads timeout for new connection without data
-HTTP_PUT_INACTIVE_TIMEOUT_CONNECTION = 4
+#HTTP_PUT_INACTIVE_TIMEOUT_CONNECTION = 4
 
 # HTTP PUT timeout for connection with data 
-HTTP_PUT_INACTIVE_TIMEOUT_UPLOAD = 30
+#HTTP_PUT_INACTIVE_TIMEOUT_UPLOAD = 30
 
 # HTTP PUT server verbosity level from 0 to 2
-HTTP_PUT_DEBUG = 0
+#HTTP_PUT_DEBUG = 0
 
 # A path to allow non-encrypted downloads/uploads via HTTP
 # May be extremely useful in rare cases with very old browsers (i.e. download Firefox using IE on Windows XP)

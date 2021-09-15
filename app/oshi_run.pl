@@ -76,16 +76,32 @@ $SIG{USR1}=\&handleSigs;
 
 my $main = OshiUpload->new->db_init;
 
+my %running_files_purge_expired;
 Mojo::IOLoop->recurring(30 => sub {
 	my $loop = shift;
-	$loop->subprocess(
+
+	if ( keys %running_files_purge_expired >= 1 ) {
+		say "Can't launch files_purge_expired() because there are previous unfinished jobs";
+		return;
+	}
+	
+	my $subprocess = $loop->subprocess(
 	  sub {
 	    my $subprocess = shift;
-	    $main->files_purge_expired;
+	    $main->files_purge_expired(500);
 	    return;
 	  },
-	  sub {}
+	  sub {
+		my $subprocess = shift;
+		delete $running_files_purge_expired{$subprocess->pid} if exists $running_files_purge_expired{$subprocess->pid};
+	  }
 	);
+	
+	$subprocess->on(spawn => sub {
+	  my $subprocess = shift;
+      $running_files_purge_expired{$subprocess->pid} = 1;
+	});
+
 });
 
 Mojo::IOLoop->recurring(172800 => sub {
@@ -134,6 +150,18 @@ Mojo::IOLoop->recurring(600 => sub {
 	    return;
 	  },
 	  sub {}
+	);
+});
+
+Mojo::IOLoop->recurring(60 => sub {
+	my $loop = shift;
+	$loop->subprocess(
+	  sub {
+	    my $subprocess = shift;
+	    $main->process_unfinished_hashsum();
+	    return;
+	  },
+	  sub {my ($subprocess, $err) = @_; say $err if $err}
 	);
 });
 

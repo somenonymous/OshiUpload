@@ -1,0 +1,24 @@
+Filename: <%= $file->{rpath} %>
+Main download: <%= $USE_HTTP_HOST ? $BASEURLPROTO : $MAIN_DOMAIN_PROTO %>://<%= ($USE_HTTP_HOST ? $BASEURL : $MAIN_DOMAIN) . '/' . $file->{urlpath} . ( $file->{shorturl} == 0 ? '/'.$file->{rpath} : '' ) %>
+% if (defined $ONION_DOMAIN and $ONION_DOMAIN ne $MAIN_DOMAIN and $c->req->url->to_abs->host !~ /\.onion$/) {
+Tor download: <%= $ONION_DOMAIN_PROTO %>://<%= $ONION_DOMAIN . '/' . $file->{urlpath}  . ( $file->{shorturl} == 0 ? '/'.$file->{rpath} : '' ) %>
+% }
+Size: <%= $file->{size} %>
+Type: <%= $file->{ftype} %>
+% if ( exists $file->{hashsum} && $file->{hashsum} ne '' ) {
+Hashsum: <%= $file->{hashsum} %> (SHA<%= $FILE_HASH_TYPE %>)
+% }
+Created: <%= scalar localtime $file->{created} %>
+Expires: <%= $file->{expires} == 0 ? 'Never' : scalar localtime $file->{expires} %>
+Destroy after download: <%= $file->{autodestroy} == 1 ? 'Yes' : 'No' %> 
+Hits: <%= $file->{hits} %>
+Delete file: <%= $USE_HTTP_HOST ? $BASEURLPROTO : $MAIN_DOMAIN_PROTO %>://<%= ($USE_HTTP_HOST ? $BASEURL : $MAIN_DOMAIN) . $MANAGE_ROUTE . $file->{mpath} . '/delete' %>
+
+% if (my $msg = stash 'ERROR') {
+=> Request error: <%= $msg %>
+
+% }
+% if (my $msg = stash 'SUCCESS') {
+=> Request complete: <%= $msg %>
+
+% }

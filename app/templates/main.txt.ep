@@ -1,0 +1,30 @@
+% my $_maindomain = $USE_HTTP_HOST ? $BASEURL : $MAIN_DOMAIN; 
+% my $_mainproto = $USE_HTTP_HOST ? $BASEURLPROTO : $MAIN_DOMAIN_PROTO; 
+% my $_linelen = '-' x length($_maindomain);
+
++---------<%= $_linelen %>----------------------------------+
++         <%= $_maindomain %> - ephemeral file hosting         +
++---------<%= $_linelen %>----------------------------------+
+
+% if (defined $CDN_DOMAIN) {
+CDN domain: <%= $CDN_DOMAIN %>
+% } if (defined $DIRECT_DOMAIN) {
+Clearnet domain: <%= $DIRECT_DOMAIN %>
+% } if (defined $ONION_DOMAIN) {
+Tor domain: <%= $ONION_DOMAIN %>
+% }
+
+To upload a file use one of the following requests/instruments ( complete reference - <%= $_mainproto %>://<%= $_maindomain %>/cmd ):
+
+=> HTTP PUT request (curl example):
+
+curl -T /path/to/file <%= $_mainproto %>://<%= $_maindomain %>
+
+=> HTTP POST request (curl example):
+
+curl <%= $_mainproto %>://<%= $_maindomain %> -F f=@/path/to/file
+
+=> TCP session (netcat example):
+
+nc -q2 <%= $TCP_DOMAIN %> <%= $TCP_PORT_RAW %> < /path/to/file
+ 

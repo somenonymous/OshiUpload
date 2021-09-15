@@ -27,7 +27,7 @@ my $storage_path = $main->{conf}->{UPLOAD_STORAGE_PATH};
 my $admin_route = $main->{conf}->{UPLOAD_MANAGE_ROUTE};
 
 my $PORTS = {
-	'PUT' => { port => $main->{conf}->{HTTP_PUT_PORT} || 4020, address => $main->{conf}->{HTTP_PUT_ADDRESS} },
+	'PUT' => { port => $main->{conf}->{HTTP_PUT_PORT} || 4020, address => $main->{conf}->{HTTP_PUT_ADDRESS} || '127.0.0.1' },
 
 };
 # no data after connection for n secs
@@ -138,7 +138,7 @@ Mojo::IOLoop->recurring(0.5 => sub {
 });
 
 
-Mojo::IOLoop->server({port => $PORTS->{'PUT'}->{port}, address => $PORTS->{'PUT'}->{address}||'127.0.0.1' } => sub {
+Mojo::IOLoop->server({port => $PORTS->{'PUT'}->{port}, address => $PORTS->{'PUT'}->{address}} => sub {
   my ($loop, $stream) = @_;
 
 	my $fh = $stream;

@@ -71,16 +71,31 @@ thus it might close the connection immediately after sending the data without re
 However, sleep may not be needed when sending big files.<br>
 </p>
 
-<h4>Fast .onion link</h4>
-<p>For convenience there is a text page that serve .onion link of this service: <a target="_blank" href="<%= $MAIN_DOMAIN_PROTO %>://<%= $MAIN_DOMAIN %>/onion"><%= $MAIN_DOMAIN %>/onion</a></p>
+
+<h4>Other requests</h4>
+% if ($HASHSUMS_ENABLED) {
+<div>Get file's hashsum: <code>curl <%= $MAIN_DOMAIN_PROTO %>://<%= $MAIN_DOMAIN %>/hashsum/somefile</code></div>
+% }
+<div>Get text-only management information: <code>curl <%= $MAIN_DOMAIN_PROTO %>://<%= $MAIN_DOMAIN %><%= $MANAGE_ROUTE %>somefilemanageid</code></div>
+<div>Delete a file: <code>curl <%= $MAIN_DOMAIN_PROTO %>://<%= $MAIN_DOMAIN %><%= $MANAGE_ROUTE %>somefilemanageid/delete</code></div>
+<div>Delete a file via DELETE request: <code>curl -X DELETE <%= $MAIN_DOMAIN_PROTO %>://<%= $MAIN_DOMAIN %><%= $MANAGE_ROUTE %>somefilemanageid</code></div>
+<p></p>
+<div>A file download link can be adjusted for a desired presentation:</div>
+<div><span class="text-muted"><%= $MAIN_DOMAIN_PROTO %>://<%= $MAIN_DOMAIN %>/somefile</span></div>
+<div><span class="text-muted"><%= $MAIN_DOMAIN_PROTO %>://<%= $MAIN_DOMAIN %>/somefile</span><code>.png</code> (any extension can be appended independently of the actual MIME type, this also skips automatic redirection for images/videos)
+<div><span class="text-muted"><%= $MAIN_DOMAIN_PROTO %>://<%= $MAIN_DOMAIN %>/somefile</span><code>/anyname.jpg</code> (any filename can be appended in case short URL mode is enabled)</div>
+
+<p></p>
+
+
+<h4>Fast .onion domain</h4>
+<div>For convenience there is a text page that serve .onion link of this service: <a target="_blank" href="<%= $MAIN_DOMAIN_PROTO %>://<%= $MAIN_DOMAIN %>/onion"><%= $MAIN_DOMAIN %>/onion</a></div>
 <div>A practical use example: <code>curl -T file `curl <%= $MAIN_DOMAIN_PROTO %>://<%= $MAIN_DOMAIN %>/onion` --socks5-hostname 127.0.0.1:9050</code></div>
 <p></p>
 
 
-<h3> Non-HTTPS requests </h3>
-
+<h4> Non-HTTPS requests </h4>
 <p>This service allows HTTP uploads and downloads without SSL/TLS encryption in order to cover some rare use cases. From a simple need to download something on Windows XP or other ancient OS to various research purposes.</p>
-
 <p>The following requests are accepted to bypass HTTPS redirection:</p>
 <div><code>GET http://<%= $MAIN_DOMAIN %>/<%= $INSECUREPATH %></code> (main page)</div>
 <div><code>GET http://<%= $MAIN_DOMAIN %>/<%= $INSECUREPATH %>/somefile</code> (downloads)</div>

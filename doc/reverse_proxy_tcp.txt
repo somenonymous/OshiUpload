@@ -1,0 +1,13 @@
+# In case there is a reverse-proxy serving clearnet connections, the traffic can be forwarded directly for TCP uploads handled by tcp.pl
+#
+# This is an example for a frontend server with IP 1.2.3.4 forwarding TCP connections on ports 7777, 7778, 7779 to a backend running tcp.pl on IP 10.0.0.1
+
+FRONTENDIP=1.2.3.4
+
+BACKENDIP=10.0.0.1
+
+iptables -t nat -A PREROUTING -d $FRONTENDIP/32 -p tcp -m tcp --dport 7777 -j DNAT --to-destination $BACKENDIP:7777
+iptables -t nat -A PREROUTING -d $FRONTENDIP/32 -p tcp -m tcp --dport 7778 -j DNAT --to-destination $BACKENDIP:7778
+iptables -t nat -A PREROUTING -d $FRONTENDIP/32 -p tcp -m tcp --dport 7779 -j DNAT --to-destination $BACKENDIP:7779
+
+# It is also recommended to avoid direct Internet connections for this and estabilish a secure communication channel between frontend and backend by using OpenVPN or WireGuard
