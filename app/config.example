@@ -63,7 +63,7 @@ CAPTCHA_SHOW_FOR_ABUSE = 0
 
 # Show content instead of forcing download when the size it less than indicated value in bytes
 # Format is json with keys representing MIME types with or without subtypes. In case subtype isn't specified, any subtype will match.
-CONTENT_VIEW_UNTIL_SIZE = { "text" : 5000000, "image" : 10000000, "application/pdf" : 10000000, "audio" : 50000000, "video" : 50000000 }
+CONTENT_VIEW_UNTIL_SIZE = { "text" : 5000000, "image" : 10000000, "image/svg" : 0, "application/pdf" : 10000000, "audio" : 50000000, "video" : 50000000 }
 
 # Short URL minimal length
 SHORTURL_LENGTH = 4
