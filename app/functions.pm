@@ -62,7 +62,8 @@ sub template_vars {
 		USE_HTTP_HOST => $self->{conf}->{UPLOAD_LINK_USE_HOST},
 		INSECUREPATH => $self->{conf}->{HTTP_INSECUREPATH},
 		ABUSE_CAPTCHA_REQUIRED => $self->{conf}->{CAPTCHA_SHOW_FOR_ABUSE},
-		HASHSUMS_ENABLED => $self->{conf}->{UPLOAD_HASH_CALCULATION}
+		HASHSUMS_ENABLED => $self->{conf}->{UPLOAD_HASH_CALCULATION},
+		DOWNLOAD_LIMIT_PER_FILE => $self->{conf}->{DOWNLOAD_LIMIT_PER_FILE}
 	};
 
 	return $g;
@@ -130,7 +131,8 @@ sub checkups {
 	$self->{conf}->{TCP_RAW_PORT} = 7777 unless exists $self->{conf}->{TCP_RAW_PORT};
 	$self->{conf}->{TCP_BASE64_PORT} = 7778 unless exists $self->{conf}->{TCP_BASE64_PORT};
 	$self->{conf}->{TCP_HEX_PORT} = 7779 unless exists $self->{conf}->{TCP_HEX_PORT};
-	
+	$self->{conf}->{DOWNLOAD_LIMIT_PER_FILE} = 0 unless exists $self->{conf}->{DOWNLOAD_LIMIT_PER_FILE};
+
 	$self->{MIMETYPE_SIZE_LIMITS} = {};
 	
 	try {
@@ -252,7 +254,7 @@ sub process_file {
 	
 	$self->{dbc}->run(sub {
 		my $dbh = shift;
-		$dbh->do("replace into uploads values (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0)", undef, @values);
+		$dbh->do("replace into uploads values (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0,0,0)", undef, @values);
 	});
 
     say "[info] process_file() finished ($mpath)" if $self->{conf}->{DEBUG} > 1;
@@ -543,7 +545,7 @@ sub db_struct {
 					  ftype varchar(32),
 					  link varchar(' . ($self->{FNMAXLEN} + $storagemaxlen + $shorturlmaxlen) . '), shorturl bool,
                       created int unsigned, expires int unsigned, autodestroy bool, autodestroylocked bool, wasdup bool, 
-                      proto varchar(8), size bigint unsigned, hits bigint unsigned, processing smallint unsigned, scanned bool,
+                      proto varchar(8), size bigint unsigned, hits bigint unsigned, processing smallint unsigned, scanned bool, oniononly bool, oniononlylocked bool,
                       primary key (mpath, urlpath)' . ($t eq'mysql'?', index(rpath), index(hashsum), index(expires), index(link)':''),
                       
         'reports' => 'time int unsigned, 
@@ -795,6 +797,12 @@ sub db_check_tables {
 					$dbh->do("alter table uploads change urlpath urlpath varchar(" . $shorturlmaxlen . ") binary");
 					my $urlpath_isfixed = $dbh->selectrow_array('select collation_name from information_schema.columns where table_name = ? and column_name = ?', undef, 'uploads', 'urlpath');
 					say "[info] changed collation of `urlpath` column from $urlpath_needfix to $urlpath_isfixed";
+				}
+				my $oniononly_patch = $dbh->selectrow_array('select column_name from information_schema.columns where table_name = ? and column_name = ?', undef, 'uploads', 'oniononly');
+				unless ($oniononly_patch) {
+					$dbh->do("alter table uploads add column oniononly bool default 0 after scanned, add column oniononlylocked bool default 0 after oniononly");
+					my $oniononly_patched = $dbh->selectrow_array('select column_name from information_schema.columns where table_name = ? and column_name = ?', undef, 'uploads', 'oniononly');
+					say "[info] added `oniononly` and `oniononlylocked` columns" if $oniononly_patched;
 				}
 			}
 

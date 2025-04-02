@@ -55,8 +55,10 @@
 <div class="row"><div class="col text-right text-secondary">Expires</div><div class="col text-left"><%= $file->{expires} == 0 ? 'Never' : scalar localtime $file->{expires} %></div></div>
 <div class="row"><div class="col text-right text-secondary">Destroy after DL</div><div class="col text-left"><%= $file->{autodestroy} == 1 ? 'Yes' : 'No' %> <form class="d-inline" method="get"><input type="hidden" name="file" value="<%= $file->{urlpath} %>"><input type="hidden" name="toggleautodestroy" value="1"><button type="submit" class="btn btn-link">[toggle]</button></form></div></div>
 <div class="row"><div class="col text-right text-secondary">Destroy lock</div><div class="col text-left"><%= $file->{autodestroylocked} == 1 ? 'Yes' : 'No' %> <form class="d-inline" method="get"><input type="hidden" name="file" value="<%= $file->{urlpath} %>"><input type="hidden" name="toggleautodestroylock" value="1"><button type="submit" class="btn btn-link">[toggle]</button></form></div></div>
+<div class="row"><div class="col text-right text-secondary">Onion only</div><div class="col text-left"><%= $file->{oniononly} == 1 ? 'Yes' : 'No' %> <form class="d-inline" method="get"><input type="hidden" name="file" value="<%= $file->{urlpath} %>"><input type="hidden" name="toggleoniononly" value="1"><button type="submit" class="btn btn-link">[toggle]</button></form></div></div>
+<div class="row"><div class="col text-right text-secondary">Onion only lock</div><div class="col text-left"><%= $file->{oniononlylocked} == 1 ? 'Yes' : 'No' %> <form class="d-inline" method="get"><input type="hidden" name="file" value="<%= $file->{urlpath} %>"><input type="hidden" name="toggleoniononlylock" value="1"><button type="submit" class="btn btn-link">[toggle]</button></form></div></div>
 
-<div class="row"><div class="col text-right text-secondary">Hits</div><div class="col text-left"><%= $file->{hits} %></div></div>
+<div class="row"><div class="col text-right text-secondary">Hits</div><div class="col text-left"><%= $file->{hits} %><%= $DOWNLOAD_LIMIT_PER_FILE ? '/' . $DOWNLOAD_LIMIT_PER_FILE : '' %></div></div>
 </div>
 <p> Use this button to delete the file permanently: </p>
 <form method="get">

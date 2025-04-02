@@ -37,6 +37,10 @@
 			<input type="hidden" name="purgeall" value="<%= $i->{url} %>">
 			<button type="submit" class="btn btn-danger btn-sm">Purge copies</button>
 			</form>
+			<form method="get" class="d-inline" style="margin: 0; padding: 0;">
+			<input type="hidden" name="oniononly" value="<%= $i->{url} %>">
+			<button type="submit" class="btn btn-danger btn-sm">Onion only</button>
+			</form>
 		</td>
 	    <td><%= scalar localtime $i->{time} %></td>
 	    <td><a target="_blank" href="<%= $ADMIN_ROUTE %>?file=<%== $i->{url} %>"><%== $i->{url} %></a></td>

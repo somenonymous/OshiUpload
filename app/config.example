@@ -68,6 +68,9 @@ CONTENT_VIEW_UNTIL_SIZE = { "text" : 5000000, "image" : 10000000, "image/svg" : 
 # Short URL minimal length
 SHORTURL_LENGTH = 4
 
+# Delete files after a number of downloads
+DOWNLOAD_LIMIT_PER_FILE = 0
+
 #########################################################################
 
 # Engine admin URL path
@@ -184,3 +187,10 @@ UPLOAD_FORCE_DESTROYONDL_TYPES = application/x-dosexec
 UPLOAD_FORCE_DESTROYONDL_EXTENSIONS = exe apk
 # Allow certain amount of downloads before removing the file affected by UPLOAD_FORCE_DESTROYONDL_* match
 UPLOAD_FORCE_DESTROYONDL_AFTER_HITS = 4
+
+# Remove files automatically once reported through the abuse report form
+UPLOAD_AUTOREMOVE_ON_ABUSE = 1
+# Interval in seconds to check for abuse reports
+UPLOAD_AUTOREMOVE_ON_ABUSE_INTERVAL = 18000
+# When UPLOAD_AUTOREMOVE_ON_ABUSE is enabled, set to `remove` to delete reported files automatically and `oniononly` to make them unavailable on clearnet domains
+UPLOAD_AUTOREMOVE_ON_ABUSE_BEHAVIOR = remove

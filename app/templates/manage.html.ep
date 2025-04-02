@@ -1,12 +1,20 @@
 % layout 'main', title => 'Upload management';
 <div class="container">
 <h3> Upload management - <span class="text-secondary"><%= $file->{rpath} %></span></h3>
-
+% if ($file->{oniononly} == 1) {
+<div class="row justify-content-center text-center">
+	<div class="col-6">
+		<div class="alert alert-warning" role="alert">
+		  This file is not available on the clearnet domain (onion only option enabled)
+		</div>
+	</div>
+</div>
+% }
 <div class="text-center" style="background-color:#f9f9fa">
 <div class="row"><div class="col text-right text-secondary">Clearnet DL</div>
 	<div class="col text-left"><a target="_blank" href="<%= $USE_HTTP_HOST ? $BASEURLPROTO : $MAIN_DOMAIN_PROTO %>://<%= ($USE_HTTP_HOST ? $BASEURL : $MAIN_DOMAIN) . '/' . $file->{urlpath} . ( $file->{shorturl} == 0 ? '/'.$file->{rpath} : '' ) %>">
 		<%= ($USE_HTTP_HOST ? $BASEURL : $MAIN_DOMAIN) . '/' . $file->{urlpath} . ( $file->{shorturl} == 0 ? '/'.$file->{rpath} : '' ) %>
-	</a></div>
+	</a><%== $file->{oniononly} == 1 ? '<span class="text-danger">[inactive]</span>' : '' %></div>
 </div>
 % if (defined $ONION_DOMAIN and $ONION_DOMAIN ne $MAIN_DOMAIN) {
 <div class="row"><div class="col text-right text-secondary">Tor DL</div>
@@ -21,7 +29,8 @@
 <div class="row"><div class="col text-right text-secondary">Created</div><div class="col text-left"><%= scalar localtime $file->{created} %></div></div>
 <div class="row"><div class="col text-right text-secondary">Expires</div><div class="col text-left"><%= $file->{expires} == 0 ? 'Never' : scalar localtime $file->{expires} %></div></div>
 <div class="row"><div class="col text-right text-secondary">Destroy after DL</div><div class="col text-left"><%= $file->{autodestroy} == 1 ? 'Yes' : 'No' %> <form class="d-inline" method="get"><input type="hidden" name="toggleautodestroy" value="1"><button type="submit" class="btn btn-link">[toggle]</button></form></div></div>
-<div class="row"><div class="col text-right text-secondary">Hits</div><div class="col text-left"><%= $file->{hits} %></div></div>
+<div class="row"><div class="col text-right text-secondary">Onion only</div><div class="col text-left"><%= $file->{oniononly} == 1 ? 'Yes' : 'No' %> <form class="d-inline" method="get"><input type="hidden" name="toggleoniononly" value="1"><button type="submit" class="btn btn-link">[toggle]</button></form></div></div>
+<div class="row"><div class="col text-right text-secondary">Hits</div><div class="col text-left"><%= $file->{hits} %><%= $DOWNLOAD_LIMIT_PER_FILE ? '/' . $DOWNLOAD_LIMIT_PER_FILE : '' %></div></div>
 </div>
 <p> Use this button to delete the file permanently: </p>
 <form method="get">

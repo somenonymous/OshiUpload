@@ -11,7 +11,8 @@ Hashsum: <%= $file->{hashsum} %> (SHA<%= $FILE_HASH_TYPE %>)
 Created: <%= scalar localtime $file->{created} %>
 Expires: <%= $file->{expires} == 0 ? 'Never' : scalar localtime $file->{expires} %>
 Destroy after download: <%= $file->{autodestroy} == 1 ? 'Yes' : 'No' %> 
-Hits: <%= $file->{hits} %>
+Onion only: <%= $file->{oniononly} == 1 ? 'Yes' : 'No' %> 
+Hits: <%= $file->{hits} %><%= $DOWNLOAD_LIMIT_PER_FILE ? '/' . $DOWNLOAD_LIMIT_PER_FILE : '' %>
 Delete file: <%= $USE_HTTP_HOST ? $BASEURLPROTO : $MAIN_DOMAIN_PROTO %>://<%= ($USE_HTTP_HOST ? $BASEURL : $MAIN_DOMAIN) . $MANAGE_ROUTE . $file->{mpath} . '/delete' %>
 
 % if (my $msg = stash 'ERROR') {

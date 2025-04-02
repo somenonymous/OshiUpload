@@ -165,6 +165,37 @@ Mojo::IOLoop->recurring(60 => sub {
 	);
 });
 
+Mojo::IOLoop->recurring($main->{conf}->{UPLOAD_AUTOREMOVE_ON_ABUSE_INTERVAL} => sub {
+	return unless $main->{conf}->{UPLOAD_AUTOREMOVE_ON_ABUSE};
+	my $loop = shift;
+	$loop->subprocess(
+	  sub {
+	    my $subprocess = shift;
+	    
+			
+			my $rows;
+			$main->{dbc}->run(sub {
+				$rows = $_->selectall_arrayref('select * from reports order by time', { Slice => {} } );
+			});
+		
+			foreach my $record (@{$rows}) {
+		
+				$main->{dbc}->run(sub {
+					if ($main->{conf}->{UPLOAD_AUTOREMOVE_ON_ABUSE_BEHAVIOR} eq 'remove') {
+						$_->do('delete from uploads where urlpath = ?', undef, $record->{url});
+					} else {
+						$_->do('update uploads set oniononly = 1, oniononlylocked = 1 where urlpath = ?', undef, $record->{url});
+					}
+				});
+		
+			}
+	
+	    return;
+	  },
+	  sub {}
+	);
+});
+
 if ( $main->{conf}->{MODULES_AUTOSTART} ) {
  system ( $hypnostop );
 

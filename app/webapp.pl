@@ -10,6 +10,7 @@ require "./functions.pm";
 
 my $main = OshiUpload->new;
 app->config(hypnotoad => { listen => ['http://' . $main->{conf}->{HTTP_APP_ADDRESS}. ':' . $main->{conf}->{HTTP_APP_PORT}],
+						   accepts => 0,
 						   workers => ( $main->{conf}->{HTTP_APP_WORKERS} || 4 ),
 						   pid_file => ( $main->{conf}->{HTTP_APP_PIDFILE} || '/tmp/hypnotoad_oshi.pid' )
 						  });
@@ -45,6 +46,76 @@ if ( $main->{conf}->{UPLOAD_HASH_CALCULATION} ) {
 		}
 	});
 }
+
+my %hitsqueue;
+my %hitsqueue_txn;
+
+Mojo::IOLoop->recurring((15 + int(rand(99))) => sub {
+	my $ioloop = shift;
+	my @updates;
+
+	foreach my $fileid ( keys(%hitsqueue)) {
+		$hitsqueue_txn{$fileid} = $hitsqueue{$fileid};
+		delete $hitsqueue{$fileid};
+		push @updates, $fileid;
+	}
+
+	$main->{dbc}->txn(fixup => sub {
+		my $dbh = shift;
+		$dbh->do("update uploads set hits = hits + ? where urlpath = ?", undef, $hitsqueue_txn{$_}, $_ ) foreach @updates;
+	});
+
+	delete $hitsqueue_txn{$_} foreach keys %hitsqueue_txn;
+
+});
+
+
+my %enforceonionqueue;
+my %deletionqueue;
+my $misc_queue_is_running = 0;
+
+Mojo::IOLoop->recurring(0.1 => sub {
+	
+	return if $misc_queue_is_running;
+	$misc_queue_is_running = 1;
+	
+	my $ioloop = shift;
+	my @deletions;
+	my @updates_onion;
+
+	foreach (keys %deletionqueue) {
+		push @deletions, $_;
+		delete $deletionqueue{$_};
+	}
+	foreach (keys %enforceonionqueue) {
+		push @updates_onion, $_;
+		delete $enforceonionqueue{$_};
+	}
+	my $subprocess = $ioloop->subprocess(
+		sub {
+			
+			foreach(@updates_onion){
+				$main->{dbc}->run(sub {
+					my $dbh = shift;
+					$dbh->do("update uploads set oniononly = 1, oniononlylocked = 1 where mpath = ?", undef, $_);
+					app->log->info("File $_ is now onion only") if $main->{conf}->{DEBUG} > 0;
+				});
+			}
+				
+			foreach(@deletions) {
+				$main->delete_file('mpath', $_);
+				app->log->info("File $_ destroyed on download") if $main->{conf}->{DEBUG} > 0;
+			}
+			
+		},
+		sub {
+			my ($subprocess, $err) = @_;
+			$misc_queue_is_running = 0;
+		}
+
+	);
+
+});
 
 hook before_dispatch => sub {
     my $c = shift;
@@ -111,6 +182,20 @@ get '/' => sub {
 				});
 				return $c->redirect_to($c->req->url->path->to_abs_string . '?file=' . $row->{'urlpath'});
 				
+			}elsif ( $c->param('toggleoniononly') ) {
+				$row->{'oniononly'} = int $row->{'oniononly'} ? 0 : 1;
+				$main->{dbc}->run(sub {
+					$_->do("update uploads set oniononly = ? where mpath = ?", undef, $row->{'oniononly'}, $row->{'mpath'} );
+				});
+				return $c->redirect_to($c->req->url->path->to_abs_string . '?file=' . $row->{'urlpath'});
+
+			}elsif ( $c->param('toggleoniononlylock') ) {
+				$row->{'oniononlylocked'} = int $row->{'oniononlylocked'} ? 0 : 1;
+				$main->{dbc}->run(sub {
+					$_->do("update uploads set oniononlylocked = ? where mpath = ?", undef, $row->{'oniononlylocked'}, $row->{'mpath'} );
+				});
+				return $c->redirect_to($c->req->url->path->to_abs_string . '?file=' . $row->{'urlpath'});
+				
 			}elsif ( defined $expire && int $expire >= 0 ) {
 				my @ex = $main->expiry_check($expire, $row->{'expires'});
 	
@@ -119,7 +204,7 @@ get '/' => sub {
 				} else {
 					$row->{'expires'} = $expire == 0 ? 0 : (time+($expire*60));
 					$main->{dbc}->run(sub {
-						$_->do("update uploads set expires = ?", undef, $row->{'expires'} );
+						$_->do("update uploads set expires = ? where mpath = ?", undef, $row->{'expires'}, $row->{'mpath'} );
 					});
 					$c->stash(SUCCESS => "The file expiry has been updated");
 				}
@@ -162,6 +247,15 @@ get '/reports/' => sub {
 			$main->delete_file('mpath', $record->{'mpath'}, 'fg');
 		}
 
+		return $c->redirect_to($c->req->url->path->to_abs_string);
+	}
+
+	my $oniononly = $c->param('oniononly');
+	if ( $oniononly ) {
+		$main->{dbc}->run(sub {
+			$_->do('update uploads set oniononly = 1, oniononlylocked = 1 where urlpath = ?', undef, $oniononly);
+			$_->do('delete from reports where url = ?', undef, $oniononly);
+		});
 		return $c->redirect_to($c->req->url->path->to_abs_string);
 	}
 	
@@ -285,6 +379,7 @@ any ['GET', 'DELETE'] => $main->{conf}->{UPLOAD_MANAGE_ROUTE} . ':fileid/*option
 	my $optcmd = $c->param('option');
 	my $pdelete = $c->param('delete');
 	my $ptoggleautodestroy = $c->param('toggleautodestroy');
+	my $ptoggleoniononly = $c->param('toggleoniononly');
 	my $rmethod = lc $c->req->method;
 	my $rnd = rand_chars ( set => 'alpha', min => 10, max => 15 );
 
@@ -311,6 +406,14 @@ any ['GET', 'DELETE'] => $main->{conf}->{UPLOAD_MANAGE_ROUTE} . ':fileid/*option
 					$dbh->do("update uploads set autodestroy = ? where mpath = ?", undef, $row->{'autodestroy'}, $mpath );
 				});
 				return ($row, ['REFRESH', undef]);
+			}elsif ( defined $ptoggleoniononly ) {
+				return ($row, ['ERROR', 'This feature was disabled for your file']) if $row->{'oniononlylocked'};
+				$row->{'oniononly'} = int $row->{'oniononly'} ? 0 : 1;
+				$main->{dbc}->run(sub {
+					my $dbh = shift;
+					$dbh->do("update uploads set oniononly = ? where mpath = ?", undef, $row->{'oniononly'}, $mpath );
+				});
+				return ($row, ['REFRESH', undef]);
 			}elsif ( defined $expire && int $expire >= 0 ) {
 				my @ex = $main->expiry_check($expire, $row->{'expires'});
 	
@@ -324,7 +427,7 @@ any ['GET', 'DELETE'] => $main->{conf}->{UPLOAD_MANAGE_ROUTE} . ':fileid/*option
 				$row->{'expires'} = $expire == 0 ? 0 : (time+($expire*60));
 				$main->{dbc}->run(sub {
 					my $dbh = shift;
-					$dbh->do("update uploads set expires = ?", undef, $row->{'expires'} );
+					$dbh->do("update uploads set expires = ? where mpath = ?", undef, $row->{'expires'}, $mpath );
 				});
 				
 				return ($row, ['SUCCESS', "The file expiry has been updated"]);
@@ -637,10 +740,10 @@ my $download = sub {
 			$urlpath =~ s/[^a-zA-Z0-9]//g;
 			my $row = $main->db_get_row('uploads', 'urlpath', $urlpath);
 
-			$main->{dbc}->run(sub {
-				my $dbh = shift;
-				$dbh->do("update uploads set hits = hits + 1 where urlpath = ?", undef, $urlpath );
-			}) if $row && ( $row->{'shorturl'} == 1 || ($row->{'shorturl'} == 0 and (defined $cfilename && $cfilename eq $row->{'rpath'})) ) && !$hashsumreq; 
+			#$main->{dbc}->run(sub {
+			#	my $dbh = shift;
+			#	$dbh->do("update uploads set hits = hits + 1 where urlpath = ?", undef, $urlpath );
+			#}) if $row && ( $row->{'shorturl'} == 1 || ($row->{'shorturl'} == 0 and (defined $cfilename && $cfilename eq $row->{'rpath'})) ) && !$hashsumreq; 
 
 			#try { utf8::encode($row->{'rpath'}) };
 
@@ -650,45 +753,61 @@ my $download = sub {
 			my ($subprocess, $err, $row) = @_;
 			return $c->reply->exception($err) if $err;
 			return ( $c->isconsole ? $c->render(text => "File not found\n", status => 404) : $c->reply->not_found ) unless $row;
-			return  ( $c->isconsole ? $c->render(text => "File not found\n", status => 404) : $c->reply->not_found ) if ( $row->{'shorturl'} == 0 and ( not defined $cfilename or $cfilename ne $row->{'rpath'} ) );
+			return  ( $c->isconsole ? $c->render(text => "File not found\n", status => 404) : $c->reply->not_found ) if ( ($row->{'shorturl'} == 0 and ( not defined $cfilename or $cfilename ne $row->{'rpath'} )) or ($row->{'oniononly'} && lc $c->req->url->to_abs->host !~ /\.onion$/) );
 
 			return $c->render(text => "File is finishing processing (calculating hashsum), please retry in some seconds") if $row->{'processing'};
 			return $c->render(text => $row->{'hashsum'} . " (SHA" . $main->{HASHTYPE} . ")\n") if $hashsumreq;
 			
 			my $file = $row->{'type'} eq 'link' ? $row->{'link'} : $main->build_filepath( $row->{'storage'},$row->{'urlpath'},$row->{'rpath'} );
 			
+			try { utf8::decode($file) };
+			
 			return $c->render(text => "File not available right now (perhaps storage unmounted?)") unless -f $file;
 			my $dlfilename = $cfilename || $row->{'rpath'};
 
+			my $is_redirect = 0;
 			my $inlineview = 0;
 			
-			foreach my $mimetype ( keys %{$main->{MIMETYPE_SIZE_LIMITS}} ) {
-				if ( $row->{'ftype'} =~ /^\Q$mimetype\E/ && $row->{'size'} <= $main->{MIMETYPE_SIZE_LIMITS}->{$mimetype} ) {
-					$inlineview = 1;
-					if ( $row->{'ftype'} =~ /^(image\/|video\/|audio\/)/ ) {
-						unless ( $cfilename || $urlpathext ) {
-							return $c->redirect_to(join('/',$row->{'urlpath'}, $dlfilename));
-						} else {
-							$c->res->headers->content_type( $row->{'ftype'} );
+			foreach my $mimetype ( sort {$a cmp $b} keys %{$main->{MIMETYPE_SIZE_LIMITS}} ) {
+				if ( $row->{'ftype'} =~ /^\Q$mimetype\E/ ) {
+					if ( $row->{'size'} <= $main->{MIMETYPE_SIZE_LIMITS}->{$mimetype} ) {
+						$inlineview = 1;
+						if ( $row->{'ftype'} =~ /^(image\/|video\/|audio\/)/ ) {
+							unless ( $cfilename || $urlpathext ) {
+								$is_redirect = 1;
+								return $c->redirect_to(join('/',$row->{'urlpath'}, $dlfilename));
+							} else {
+								$c->res->headers->content_type( $row->{'ftype'} );
+							}
+						} elsif ( $row->{'ftype'} =~ /^text\// ) {
+							$c->res->headers->content_type( 'text/plain; charset=utf-8');
+						}elsif ( $row->{'ftype'} =~ /^application\/pdf/ ) {
+							$c->res->headers->content_disposition("inline; filename=$dlfilename");
 						}
-					} elsif ( $row->{'ftype'} =~ /^text\// ) {
-						$c->res->headers->content_type( 'text/plain; charset=utf-8');
-					}elsif ( $row->{'ftype'} =~ /^application\/pdf/ ) {
-						$c->res->headers->content_disposition("inline; filename=$dlfilename");
+					} else {
+						$inlineview = 0;
 					}
 				}
 			}
-			
+
+			$hitsqueue{$urlpath}++ if !$is_redirect; 
+
+			if ( $main->{conf}->{DOWNLOAD_LIMIT_PER_FILE} > 0 && ( $row->{'hits'} + 1 ) >= $main->{conf}->{DOWNLOAD_LIMIT_PER_FILE} ) {
+				unless ($row->{'oniononly'}) {
+					$enforceonionqueue{$row->{'mpath'}} = '';
+					app->log->info("File marked to become onion only: $urlpath ($row->{'mpath'})" ) if $main->{conf}->{DEBUG} > 0;
+				}
+			}
+
+			if ( ( $main->{conf}->{DOWNLOAD_LIMIT_PER_FILE} > 0 && ( $row->{'hits'} + 1 ) >= $main->{conf}->{DOWNLOAD_LIMIT_PER_FILE} ) || ($row->{'autodestroy'} && ( !int $row->{'autodestroylocked'}  ||  ( ( $row->{'hits'} + 1 ) >= $main->{RESTRICTED_FILE_HITLIMIT} )   )) ) {
+				$deletionqueue{$row->{'mpath'}} = '';
+				app->log->info("File marked for deletion on download: $urlpath ($row->{'mpath'})") if $main->{conf}->{DEBUG} > 0;
+			}
+
 			$c->res->headers->content_disposition("attachment; filename=$dlfilename") unless $inlineview;
 			
 			$c->reply->asset(Mojo::Asset::File->new(path => $file));
 			
-			
-
-			if ( $row->{'autodestroy'} && ( !int $row->{'autodestroylocked'}  ||  ( ( $row->{'hits'} + 1 ) >= $main->{RESTRICTED_FILE_HITLIMIT} )   ) ) {
-				$main->delete_file('mpath', $row->{'mpath'});
-				app->log->info('File destroyed on download') if $main->{conf}->{DEBUG} > 0;
-			}
 		}
 	);
 };
